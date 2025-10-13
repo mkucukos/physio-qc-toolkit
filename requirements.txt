@@ -1,0 +1,13 @@
+numpy==1.26.4
+pandas==2.3.1
+scipy==1.12.0
+matplotlib==3.10.5
+neurokit2==0.2.12
+pyedflib==0.1.38
+ipython==8.11.0
+ipykernel==6.21.3
+jupyter==1.0.0
+jsonschema==4.20.0
+typing_extensions==4.5.0
+black==24.4.2
+flake8==7.1.2
