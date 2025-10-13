@@ -1,10 +1,10 @@
-# 🧠 physio-qc-toolkit
+#  physio-qc-toolkit
 
 A lightweight **Python toolkit** for **physiological signal quality control (QC)** and visualization across multimodal PSG and wearable data (e.g., ECG, thermistor airflow, pressure, PPG).
 
 ---
 
-## 🚀 Overview
+##  Overview
 
 This toolkit provides an **end-to-end pipeline** to:
 1. **Read EDF files** and extract channel data into structured DataFrames  
@@ -49,7 +49,6 @@ physio-qc-toolkit/
 
 ##  Example Usage
 
-```python
 from read.read_edf import read_edf_to_dataframes
 from quality.run_qc import run_ecg_qc
 
@@ -78,7 +77,7 @@ qc_df, per_metric_json, overall_json = run_ecg_qc(
 # Step 3: Print summary
 print(overall_json)
 
-📊 Output Example
+ Output Example
 
 === Overall QC Summary ===
 {'total_epochs': 180, 'good_epochs': 157, 'bad_epochs': 23, 'good_ratio': 0.872, 'bad_ratio': 0.128}
@@ -94,14 +93,14 @@ print(overall_json)
 }
 
 
-Visualization
+## 🖼️ Visualization
 
-Overall QC: one red/green span per epoch
-ECG II — Baseline_Wander_Ratio: QC (Red=Bad, Green=Good)
-![SNR](SNR.png)
+Each 30-second epoch is shaded according to QC results:
+- 🟢 **Green** → passes all quality checks  
+- 🔴 **Red** → fails at least one metric threshold  
 
-⚙️ Dependencies
-pip install -r requirements.txt
+### Example: SNR Quality Check
+![ECG II — SNR_dB Quality Check](SNR.png)
 
 License
 This project is licensed under the MIT License — see the LICENSE
