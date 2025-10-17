@@ -106,8 +106,19 @@ Each 30-second epoch is shaded according to QC results:
 - 🟢 **Green** → passes all quality checks  
 - 🔴 **Red** → fails at least one metric threshold  
 
-### Example: SNR Quality Check
-![ECG II — SNR_dB Quality Check](SNR.png)
+### 🫀 ECG Signal Quality Examples
+
+| Clipping Ratio | Baseline Wander | SNR (Signal-to-Noise Ratio) |
+|:---------------:|:----------------:|:---------------------------:|
+| ![Clipping Ratio QC](assets/clipping.png) | ![Baseline Wander QC](assets/baseline.png) | ![SNR QC](assets/SNR.png) |
+
+---
+
+### 🌬️ Flow Signal Quality Examples
+
+| Clipping Ratio | BPM (Respiration Rate) |
+|:----------------:|:----------------------:|
+| ![Flow Clipping QC](assets/flow_clipping.png) | ![Flow BPM QC](assets/flow_bpm.png) |
 
 License
 This project is licensed under the MIT License — see the LICENSE
