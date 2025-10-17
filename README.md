@@ -4,6 +4,13 @@ A lightweight **Python toolkit** for **physiological signal quality control (QC)
 
 ---
 
+## 🐍 Requirements
+
+- **Python 3.11**
+- Install dependencies via:
+  ```bash
+  pip install -r requirements.txt
+
 ##  Overview
 
 This toolkit provides an **end-to-end pipeline** to:
@@ -93,7 +100,7 @@ print(overall_json)
 }
 
 
-## 🖼️ Visualization
+##  Visualization
 
 Each 30-second epoch is shaded according to QC results:
 - 🟢 **Green** → passes all quality checks  
