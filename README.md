@@ -4,7 +4,7 @@ A lightweight **Python toolkit** for **physiological signal quality control (QC)
 
 ---
 
-## 🐍 Requirements
+##  Requirements
 
 - **Python 3.11**
 - Install dependencies via:
