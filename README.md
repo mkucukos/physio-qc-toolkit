@@ -35,23 +35,28 @@ physio-qc-toolkit/
 
 ---
 
-##  Features
+## **Features**
 
-- **EDF Reader**: Handles EDF headers, sampling rates, labels, and transducers  
-- **Channel Disambiguation**: Creates unique labels when duplicates exist  
-- **Epoch-Based QC**: 30s windows (configurable) with per-epoch stats  
-- **Metrics:**
-  - Clipping Ratio (`>50%` = bad)
-  - Flatline Ratio (`>50%` = bad)
-  - Missing Ratio (`>50%` = bad)
-  - Baseline Wander (`>15%` power <0.3 Hz = bad)
-  - Heart Rate Range (`25–220 bpm`)
-  - SNR (`<5 dB` = bad)
+- **EDF Reader:** Handles EDF headers, sampling rates, labels, and transducers  
+- **Channel Disambiguation:** Creates unique labels when duplicates exist  
+- **Epoch-Based QC:** 30 s windows (configurable) with per-epoch statistics  
+- **Metrics:**  
+  - **ECG Signals**  
+    - **Clipping Ratio** (`>50%` = bad)  
+    - **Flatline Ratio** (`>50%` = bad)  
+    - **Missing Ratio** (`>50%` = bad)  
+    - **Baseline Wander** (`>15%` power < 0.3 Hz = bad)  
+    - **Heart Rate Range** (`25–220 bpm`)  
+    - **SNR** (`<5 dB` = bad)  
+  - **Flow Signals (Thermistor / Pressure)**  
+    - **Clipping Ratio** (`>50%` = bad)  
+    - **Flatline Ratio** (`>50%` = bad)  
+    - **Missing Ratio** (`>50%` = bad)  
+    - **Respiration Rate** (`<7 bpm`, `>30 bpm`, or NaN = bad)  
 - **Visualization:**  
-  - Per-metric and overall QC plots (green = good, red = bad)
+  - Per-metric and overall QC plots (🟢 green = good, 🔴 red = bad)  
 - **JSON Export:**  
-  - Ratio of good/bad epochs per metric  
-
+  - Ratio of good / bad epochs per metric and per-signal summary  
 ---
 
 ##  Example Usage
