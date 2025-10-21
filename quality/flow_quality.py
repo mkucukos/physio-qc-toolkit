@@ -4,44 +4,52 @@ import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 from scipy.signal import butter, filtfilt, welch
 import neurokit2 as nk
+import json
+from datetime import datetime, timezone, timedelta
 
 # ---- helper metrics ----
 def check_clipping(signal, digital_min=-100, digital_max=100, edge_pct=0.01):
-    if len(signal) == 0:
+    if signal.size == 0:
         return np.nan
-    lower = digital_min * (1 - edge_pct)
-    upper = digital_max * (1 - edge_pct)
-    clipped = np.logical_or(signal <= lower, signal >= upper)
+    lower, upper = digital_min * (1 - edge_pct), digital_max * (1 - edge_pct)
+    clipped = (signal <= lower) | (signal >= upper)
     return float(np.mean(clipped))
 
 def flatline_ratio(signal, eps=1e-6):
-    if len(signal) < 2:
+    if signal.size < 2:
         return np.nan
-    diffs = np.abs(np.diff(signal))
+    diffs = np.abs(np.diff(signal, prepend=signal[:1]))
     return float(np.mean(diffs < eps))
 
-def missing_ratio(n_samples_epoch, fs, epoch_len):
-    expected = int(fs * epoch_len)
-    if expected <= 0:
+def missing_ratio(n_present, n_expected):
+    if n_expected <= 0:
         return np.nan
-    actual = int(n_samples_epoch)
-    return float(max(0.0, 1.0 - actual / expected))
+    return float(max(0.0, 1.0 - n_present / n_expected))
 
-def _bandpass(sig, fs, lo=0.10, hi=1.00, order=4):
+def bandpass_filter(sig, fs, lo=0.10, hi=1.00, order=4):
     nyq = 0.5 * fs
-    lo_n = max(lo / nyq, 1e-6)
-    hi_n = min(hi / nyq, 0.999999)
+    lo_n, hi_n = max(lo / nyq, 1e-6), min(hi / nyq, 0.999999)
     b, a = butter(order, [lo_n, hi_n], btype="bandpass")
     return filtfilt(b, a, sig, method="gust")
 
-def _bpm_welch(seg, fs, band=(0.10, 1.00)):
+def bpm_welch(seg, fs, band=(0.10, 1.00)):
+    if seg.size == 0:
+        return np.nan
     f, pxx = welch(seg, fs=fs, nperseg=min(len(seg), 2048))
-    low, high = band
-    m = (f >= low) & (f <= high) & np.isfinite(pxx)
+    m = (f >= band[0]) & (f <= band[1])
     if np.any(m) and np.nansum(pxx[m]) > 0:
         dom = f[m][np.argmax(pxx[m])]
         return float(dom * 60.0)
     return np.nan
+
+def ratio_summary(bad_n, total):
+    good_n = total - bad_n
+    return {
+        "good_epochs": int(good_n),
+        "bad_epochs": int(bad_n),
+        "good_ratio": round(good_n / total, 3) if total else None,
+        "bad_ratio": round(bad_n / total, 3) if total else None,
+    }
 
 # ---- main QC ----
 def run_flow_qc(
@@ -49,182 +57,148 @@ def run_flow_qc(
     channel_dataframes,
     fs=100,
     epoch_len=30,
-    plot='overall',
-    tz="UTC",
-    digital_min=-100,
-    digital_max=100,
-    clipping_edge_pct=0.01,
+    json_path=None,
+    plot="per-metric",      # 'overall' | 'per-metric' | 'both' | 0
     clipping_max=0.50,
     flatline_max=0.50,
     missing_max=0.50,
-    bpm_min=7.0,
-    bpm_max=30.0,
-    bp_lo=0.10,
-    bp_hi=1.00,
+    bpm_min=10.0,
+    bpm_max=22.0
 ):
-    """
-    Flow QC with bandpassed-BPM estimation (NeuroKit2 -> Welch fallback).
-    Marks epochs as bad if:
-      - Clipping_Ratio > 0.50
-      - Flatline_Ratio > 0.50
-      - Missing_Ratio > 0.50
-      - BPM < 7, > 30, or NaN
-    """
     if channel_name not in channel_dataframes:
-        raise KeyError(f"Channel '{channel_name}' not found in provided channel_dataframes.")
+        raise KeyError(f"Channel '{channel_name}' not found.")
 
-    # --- load & sanitize ---
-    df = channel_dataframes[channel_name].copy()
-    df["Absolute Time"] = pd.to_datetime(df["Absolute Time"], errors="coerce")
-    df = df.dropna(subset=["Absolute Time", channel_name]).sort_values("Absolute Time")
-    if df["Absolute Time"].dt.tz is None or str(df["Absolute Time"].dt.tz.iloc[0]) == "None":
-        df["Absolute Time"] = df["Absolute Time"].dt.tz_localize(tz)
+    df = channel_dataframes[channel_name]
+    t_abs = pd.to_datetime(df["Absolute Time"], errors="coerce")
+    if getattr(t_abs.dt, "tz", None) is None:
+        t_abs = t_abs.dt.tz_localize("UTC")
 
-    sig_series = pd.to_numeric(df[channel_name], errors="coerce")
-    mask = ~sig_series.isna()
-    df = df.loc[mask].copy()
-    sig = sig_series.loc[mask].to_numpy()
-    times = df["Absolute Time"].to_numpy()
+    t_abs_ns = t_abs.astype("int64", copy=False)
+    sig_np = pd.to_numeric(df[channel_name], errors="coerce").to_numpy(dtype=float)
+    mask = np.isfinite(sig_np) & np.isfinite(t_abs_ns)
+    sig, t_abs_ns = sig_np[mask].astype(np.float32), t_abs_ns[mask]
 
-    samples_per_epoch = int(fs * epoch_len)
-    n_epochs = int(np.ceil(len(sig) / samples_per_epoch)) if samples_per_epoch > 0 else 0
+    if sig.size == 0:
+        empty = {
+            "total_epochs": 0, "good_epochs": 0, "bad_epochs": 0,
+            "good_ratio": None, "bad_ratio": None
+        }
+        if json_path:
+            with open(json_path, "w") as f:
+                json.dump({"per_epoch": [], "per_metric": {}, "overall": empty}, f, indent=2)
+        return [], {}, empty
 
-    rows = []
-    for i in range(n_epochs):
-        s = i * samples_per_epoch
-        e = min((i + 1) * samples_per_epoch, len(sig))
-        if s >= e:
-            continue
-        epoch_raw = sig[s:e]
+    # time base
+    t0_ns = t_abs_ns[0]
+    t_sec = (t_abs_ns - t0_ns) / 1e9
+    t0_dt = datetime.fromtimestamp(t0_ns / 1e9, tz=timezone.utc)
 
-        # metrics
-        clip = check_clipping(epoch_raw, digital_min=digital_min, digital_max=digital_max, edge_pct=clipping_edge_pct)
-        flat = flatline_ratio(epoch_raw, eps=1e-6)
-        miss = missing_ratio(len(epoch_raw), fs, epoch_len)
+    spp = int(fs * epoch_len)
+    starts = np.arange(0, len(sig), spp, dtype=int)
+    ends = np.minimum(starts + spp, len(sig))
 
-        # BPM estimation
+    per_epoch = []
+    for i, (s, e) in enumerate(zip(starts, ends), start=1):
+        seg = sig[s:e]
+        clip = check_clipping(seg)
+        flat = flatline_ratio(seg)
+        miss = missing_ratio(seg.size, spp)
+
+        try:
+            seg_filt = bandpass_filter(seg - np.nanmedian(seg), fs)
+        except Exception:
+            seg_filt = seg
+
         bpm = np.nan
         try:
-            epoch_filt = _bandpass(epoch_raw - np.nanmedian(epoch_raw), fs, lo=bp_lo, hi=bp_hi)
-        except Exception:
-            epoch_filt = epoch_raw
-        try:
-            rr = nk.rsp_rate(epoch_filt, sampling_rate=fs, method="fft")
+            rr = nk.rsp_rate(seg_filt, sampling_rate=fs, method="fft")
             if rr is not None and np.size(rr):
                 bpm = float(np.nanmedian(rr))
             if not np.isfinite(bpm):
-                rr2 = nk.rsp_rate(epoch_filt, sampling_rate=fs, method="count")
-                if rr2 is not None and np.size(rr2):
-                    bpm = float(np.nanmedian(rr2))
+                bpm2 = nk.rsp_rate(seg_filt, sampling_rate=fs, method="count")
+                if bpm2 is not None and np.size(bpm2):
+                    bpm = float(np.nanmedian(bpm2))
         except Exception:
             pass
         if not np.isfinite(bpm):
-            bpm = _bpm_welch(epoch_filt, fs, band=(bp_lo, bp_hi))
+            bpm = bpm_welch(seg_filt, fs)
 
-        # Flags (now including NaN BPM)
-        bad_clip = (not np.isnan(clip)) and (clip > clipping_max)
-        bad_flat = (not np.isnan(flat)) and (flat > flatline_max)
-        bad_miss = (not np.isnan(miss)) and (miss > missing_max)
-        bad_bpm_nan = not np.isfinite(bpm)
-        bad_bpm_low = np.isfinite(bpm) and bpm < bpm_min
-        bad_bpm_high = np.isfinite(bpm) and bpm > bpm_max
-        bad_bpm = bad_bpm_low or bad_bpm_high or bad_bpm_nan
-
+        bad_clip = bool(np.isfinite(clip) and clip > clipping_max)
+        bad_flat = bool(np.isfinite(flat) and flat > flatline_max)
+        bad_miss = bool(np.isfinite(miss) and miss > missing_max)
+        bad_bpm_nan = bool(not np.isfinite(bpm))
+        bad_bpm_low = bool(np.isfinite(bpm) and bpm < bpm_min)
+        bad_bpm_high = bool(np.isfinite(bpm) and bpm > bpm_max)
+        bad_bpm = bool(bad_bpm_low or bad_bpm_high or bad_bpm_nan)
         bad_epoch = bool(bad_clip or bad_flat or bad_miss or bad_bpm)
 
-        rows.append({
-            "Epoch": i + 1,
-            "Start_Time": times[s],
-            "End_Time": times[e - 1],
-            "Clipping_Ratio": clip,
-            "Flatline_Ratio": flat,
-            "Missing_Ratio": miss,
-            "BPM": bpm,
+        per_epoch.append({
+            "Epoch": int(i),
+            "Start_Time_ISO": (t0_dt + timedelta(seconds=float(t_sec[s]))).isoformat(),
+            "End_Time_ISO": (t0_dt + timedelta(seconds=float(t_sec[e - 1]))).isoformat(),
+            "Clipping_Ratio": None if not np.isfinite(clip) else float(clip),
+            "Flatline_Ratio": None if not np.isfinite(flat) else float(flat),
+            "Missing_Ratio": None if not np.isfinite(miss) else float(miss),
+            "BPM": None if not np.isfinite(bpm) else float(bpm),
             "Bad_Epoch": bad_epoch,
             "Bad_Clip": bad_clip,
             "Bad_Flatline": bad_flat,
             "Bad_Missing": bad_miss,
-            "Bad_BPM_Low": bad_bpm_low,
-            "Bad_BPM_High": bad_bpm_high,
-            "Bad_BPM_NaN": bad_bpm_nan,
             "Bad_BPM": bad_bpm,
         })
 
-    quality_df = pd.DataFrame(rows)
-
-    # summaries
-    total = len(quality_df)
-    def _summary(flag_col):
-        bad_n = int(quality_df[flag_col].sum()) if total else 0
-        good_n = total - bad_n
-        return {
-            "good_epochs": good_n,
-            "bad_epochs": bad_n,
-            "good_ratio": round(good_n / total, 3) if total else np.nan,
-            "bad_ratio": round(bad_n / total, 3) if total else np.nan,
-        }
-
-    per_metric = {
-        f"Clipping>(>{clipping_max:.2f})": _summary("Bad_Clip"),
-        f"Flatline>(>{flatline_max:.2f})": _summary("Bad_Flatline"),
-        f"Missing>(>{missing_max:.2f})":  _summary("Bad_Missing"),
-        f"BPM<({bpm_min:g})":             _summary("Bad_BPM_Low"),
-        f"BPM>({bpm_max:g})":             _summary("Bad_BPM_High"),
-        "BPM_NaN":                        _summary("Bad_BPM_NaN"),
+    total = len(per_epoch)
+    def count(flag): return sum(1 for r in per_epoch if r[flag])
+    per_metric_json = {
+        "Clipping": ratio_summary(count("Bad_Clip"), total),
+        "Flatline": ratio_summary(count("Bad_Flatline"), total),
+        "Missing": ratio_summary(count("Bad_Missing"), total),
+        "BPM": ratio_summary(count("Bad_BPM"), total),
     }
-
-    overall_bad = int(quality_df["Bad_Epoch"].sum()) if total else 0
+    overall_bad = count("Bad_Epoch")
     overall_json = {
         "total_epochs": total,
         "good_epochs": total - overall_bad,
         "bad_epochs": overall_bad,
-        "good_ratio": round((total - overall_bad) / total, 3) if total else np.nan,
-        "bad_ratio": round(overall_bad / total, 3) if total else np.nan,
-        "limits": {
-            "clipping_max": clipping_max,
-            "flatline_max": flatline_max,
-            "missing_max":  missing_max,
-            "bpm_min": bpm_min,
-            "bpm_max": bpm_max,
-            "bp_band_hz": [bp_lo, bp_hi],
-        }
+        "good_ratio": round((total - overall_bad) / total, 3) if total else None,
+        "bad_ratio": round(overall_bad / total, 3) if total else None,
     }
 
-    # --- plotting ---
-    def _shade(ax, flag_col):
-        for _, r in quality_df.iterrows():
-            ax.axvspan(r["Start_Time"], r["End_Time"],
-                       color=("red" if r[flag_col] else "green"), alpha=0.18)
+    if json_path:
+        with open(json_path, "w") as f:
+            json.dump({"per_epoch": per_epoch, "per_metric": per_metric_json, "overall": overall_json}, f, indent=2)
 
-    if total and plot in ("overall", "both"):
-        fig, ax = plt.subplots(figsize=(14, 5))
-        ax.plot(df["Absolute Time"], sig, lw=0.8, color="black")
-        ax.set_title(f"{channel_name} — Overall QC (Red=Bad, Green=Good)")
-        ax.set_xlabel("Time"); ax.set_ylabel("Amplitude")
-        ax.xaxis.set_major_formatter(mdates.DateFormatter("%H:%M:%S"))
-        ax.xaxis.set_major_locator(mdates.AutoDateLocator()); ax.grid(True)
-        _shade(ax, "Bad_Epoch")
-        plt.tight_layout(); plt.show()
+    # plotting
+    if plot in ("overall", "per-metric", "both"):
+        times = [t0_dt + timedelta(seconds=float(s)) for s in t_sec]
+        def shade(ax, flag_key):
+            for r in per_epoch:
+                st, et = datetime.fromisoformat(r["Start_Time_ISO"]), datetime.fromisoformat(r["End_Time_ISO"])
+                ax.axvspan(st, et, color=("red" if r[flag_key] else "green"), alpha=0.18)
 
-    if total and plot in ("per-metric", "both"):
-        for metric, flag in {
-            "Clipping_Ratio": "Bad_Clip",
-            "Flatline_Ratio": "Bad_Flatline",
-            "Missing_Ratio": "Bad_Missing",
-            "BPM (Low/High/NaN)": "Bad_BPM",
-        }.items():
+        if plot in ("overall", "both"):
             fig, ax = plt.subplots(figsize=(14, 5))
-            ax.plot(df["Absolute Time"], sig, lw=0.8, color="black")
-            if "BPM" in metric:
-                title = f"{channel_name} — BPM QC (Red if NaN, <{bpm_min:g}, or >{bpm_max:g})"
-            else:
-                title = f"{channel_name} — {metric}: QC (Red=Bad, Green=Good)"
-            ax.set_title(title)
-            ax.set_xlabel("Time"); ax.set_ylabel("Amplitude")
+            step = max(1, len(sig) // 20000)
+            ax.plot(times[::step], sig[::step], lw=0.8, color="black")
+            shade(ax, "Bad_Epoch")
+            ax.set_title(f"{channel_name} — Overall Flow QC (Red=Bad, Green=Good)")
             ax.xaxis.set_major_formatter(mdates.DateFormatter("%H:%M:%S"))
-            ax.xaxis.set_major_locator(mdates.AutoDateLocator()); ax.grid(True)
-            _shade(ax, flag)
-            plt.tight_layout(); plt.show()
+            ax.grid(True); plt.tight_layout(); plt.show()
 
+        if plot in ("per-metric", "both"):
+            flag_map = {
+                "Clipping": "Bad_Clip",
+                "Flatline": "Bad_Flatline",
+                "Missing": "Bad_Missing",
+                "BPM": "Bad_BPM"
+            }
+            for metric, flag in flag_map.items():
+                fig, ax = plt.subplots(figsize=(14, 5))
+                step = max(1, len(sig) // 20000)
+                ax.plot(times[::step], sig[::step], lw=0.8, color="black")
+                shade(ax, flag)
+                ax.set_title(f"{channel_name} — {metric} QC (Red=Bad, Green=Good)")
+                ax.xaxis.set_major_formatter(mdates.DateFormatter("%H:%M:%S"))
+                ax.grid(True); plt.tight_layout(); plt.show()
 
-    return quality_df, per_metric, overall_json
+    return per_epoch, per_metric_json, overall_json
