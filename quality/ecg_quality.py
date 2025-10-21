@@ -157,6 +157,7 @@ def run_ecg_qc(
         return float(np.sum(pxx[f <= cutoff]) / total)
 
     # --- epoch loop ---
+        # --- epoch loop ---
     n_epochs = int(np.ceil(len(signal) / samples_per_epoch))
     results = []
 
@@ -205,6 +206,7 @@ def run_ecg_qc(
             "Bad_Baseline": bool(bad_base),
             "Bad_HR": bool(bad_hr),
             "Bad_SNR": bool(bad_snr),
+            "Raw_Data": epoch.tolist()  # <-- added line
         })
 
     # --- per-metric summaries ---

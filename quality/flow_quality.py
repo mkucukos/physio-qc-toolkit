@@ -145,6 +145,7 @@ def run_flow_qc(
             "Bad_Flatline": bad_flat,
             "Bad_Missing": bad_miss,
             "Bad_BPM": bad_bpm,
+            "Raw_Data": seg.tolist()  # ✅ added raw data for this epoch
         })
 
     total = len(per_epoch)
@@ -166,7 +167,12 @@ def run_flow_qc(
 
     if json_path:
         with open(json_path, "w") as f:
-            json.dump({"per_epoch": per_epoch, "per_metric": per_metric_json, "overall": overall_json}, f, indent=2)
+            json.dump(
+                {"per_epoch": per_epoch,
+                 "per_metric": per_metric_json,
+                 "overall": overall_json},
+                f, indent=2
+            )
 
     # plotting
     if plot in ("overall", "per-metric", "both"):
