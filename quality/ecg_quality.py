@@ -9,41 +9,81 @@ import neurokit2 as nk
 
 # ---------------- ECG features (HR, HRV, SNR per epoch) ----------------
 def get_ecg_features(ecg, time_in_sec, fs):
-    ecg = np.asarray(ecg, dtype=np.float64)
+    """
+    Compute ECG features from raw ECG signal.
 
-    b, a = butter(4, (0.25, 25), btype="bandpass", fs=fs)
-    ecg_filt = filtfilt(b, a, ecg, axis=0)
-    ecg_cleaned = nk.ecg_clean(ecg_filt, sampling_rate=fs)
+    Parameters
+    ----------
+    ecg : array-like
+        Raw ECG signal.
+    time_in_sec : array-like
+        Timestamps corresponding to each sample of the ECG signal.
+    fs : float
+        Sampling frequency of the ECG signal.
 
-    _, rpeaks = nk.ecg_peaks(ecg_cleaned, sampling_rate=fs, method="engzeemod2012")
-    r_idx = rpeaks.get("ECG_R_Peaks", np.array([], dtype=int))
-    if r_idx is None or len(r_idx) < 2:
-        return np.array([np.nan, np.nan, np.nan, np.nan, np.nan])
+    Returns
+    -------
+    array
+        Array of ECG features: [mean heart rate, maximum heart rate, minimum heart rate, heart rate variability].
+    """
+    try:
+        ecg = np.asarray(ecg, dtype=np.float64)  # Ensure the ECG signal is a numpy array of floats
+        b, a = butter(4, (0.25, 25), 'bandpass', fs=fs)
+        ecg_filt = filtfilt(b, a, ecg, axis=0)
+        ecg_cleaned = nk.ecg_clean(ecg_filt, sampling_rate=fs)
+        instant_peaks, rpeaks = nk.ecg_peaks(ecg_cleaned, sampling_rate=fs, method="engzeemod2012")
+    except Exception as e:
+        raise ValueError("Error processing ECG signal: " + str(e))
 
-    rr_times = time_in_sec[r_idx]
+    rr_times = time_in_sec[rpeaks['ECG_R_Peaks']]
+    if len(rr_times) == 0:
+        raise ValueError("No R-peaks detected in ECG signal.")
+
     d_rr = np.diff(rr_times)
-    if len(d_rr) == 0:
-        return np.array([np.nan, np.nan, np.nan, np.nan, np.nan])
+    heart_rate = 60 / d_rr
+    if heart_rate.size == 0:
+        raise ValueError("Error computing heart rate from ECG signal.")
 
-    hr = 60.0 / d_rr
-    if hr.size > 1:
-        z = np.abs(stats.zscore(hr, nan_policy="omit"))
-        hr = hr[z <= 6.0]
-    if hr.size == 0:
-        return np.array([np.nan, np.nan, np.nan, np.nan, np.nan])
+    valid_heart_rate = heart_rate[~np.isnan(heart_rate)]
+    z_scores = np.abs(stats.zscore(valid_heart_rate))
 
-    hr_mean = np.nanmean(hr)
-    hr_min = np.nanmin(hr)
-    hr_max = np.nanmax(hr)
+    z_score_threshold = 5.0
+    heart_rate = valid_heart_rate[z_scores <= z_score_threshold]
 
-    d_rr_ms = np.diff(1000.0 * d_rr)
-    hrv = np.sqrt(np.nanmean(d_rr_ms**2)) if d_rr_ms.size else np.nan
+    hr_mean = np.nanmean(heart_rate)
+    hr_min = np.nanmin(heart_rate)
+    hr_max = np.nanmax(heart_rate)
+    d_rr_ms = 1000 * d_rr
+    d_d_rr_ms = np.diff(d_rr_ms)
 
-    sig_pow = np.var(ecg_filt)
-    noise_pow = np.var(ecg_filt - ecg_cleaned)
-    snr_db = 10.0 * np.log10(sig_pow / (noise_pow + 1e-12)) if sig_pow > 0 else np.nan
+    valid_d_d_rr_ms = d_d_rr_ms[~np.isnan(d_d_rr_ms)]
+    z_scores = np.abs(stats.zscore(valid_d_d_rr_ms))
+    d_d_rr_ms = valid_d_d_rr_ms[z_scores <= z_score_threshold]
+    heart_rate_variability = np.sqrt(np.nanmean(np.square(d_d_rr_ms)))
 
-    return np.array([hr_mean, hr_max, hr_min, hrv, snr_db])
+    ecg_with_rr_intervals = []
+    ecg_with_rr_intervals_cleaned = []
+
+    for rr_interval in rr_times:
+        start_time = rr_interval - 0.1  # 0.1 seconds before the RR interval
+        end_time = rr_interval + 0.1  # 0.1 seconds after the RR interval
+        indices = np.where((time_in_sec >= start_time) & (time_in_sec <= end_time))[0]
+
+        indices = indices[(indices >= 0) & (indices < len(ecg))]
+
+        if len(indices) > 0:
+            ecg_with_rr_intervals.extend(ecg[indices])
+            ecg_with_rr_intervals_cleaned.extend(ecg_cleaned[indices])
+
+    ecg_with_rr_intervals = np.array(ecg_with_rr_intervals)
+    ecg_with_rr_intervals_cleaned = np.array(ecg_with_rr_intervals_cleaned)
+
+    signal_power = np.var(ecg_with_rr_intervals)
+    noise_power = np.var(ecg_with_rr_intervals - ecg_with_rr_intervals_cleaned)
+
+    snr_values = 10 * np.log10(signal_power / noise_power)
+
+    return np.array([hr_mean, hr_max, hr_min, heart_rate_variability, snr_values])
 
 
 # ---------------- QC runner: ANY fail => epoch BAD ----------------
