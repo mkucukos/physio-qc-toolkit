@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
-from scipy.signal import butter, filtfilt, welch
+from scipy.signal import butter, filtfilt, welch, correlate
 import neurokit2 as nk
 import json
 from datetime import datetime, timezone, timedelta
@@ -42,6 +42,21 @@ def bpm_welch(seg, fs, band=(0.10, 1.00)):
         return float(dom * 60.0)
     return np.nan
 
+# ---- autocorrelation quality ----
+def autocorr_quality(seg, fs, max_lag_sec=10):
+    """Compute normalized autocorrelation peak within lag window."""
+    if len(seg) < fs:
+        return np.nan
+    seg = seg - np.nanmean(seg)
+    ac = correlate(seg, seg, mode='full')
+    ac = ac[len(ac)//2:]
+    if np.nanmax(np.abs(ac)) == 0:
+        return np.nan
+    ac /= np.nanmax(ac)
+    lags = np.arange(len(ac)) / fs
+    mask = (lags >= 1.0) & (lags <= max_lag_sec)
+    return float(np.nanmax(ac[mask])) if np.any(mask) else np.nan
+
 def ratio_summary(bad_n, total):
     good_n = total - bad_n
     return {
@@ -58,12 +73,13 @@ def run_flow_qc(
     fs=100,
     epoch_len=30,
     json_path=None,
-    plot="per-metric",      # 'overall' | 'per-metric' | 'both' | 0
+    plot="per-metric",
     clipping_max=0.50,
     flatline_max=0.50,
     missing_max=0.50,
     bpm_min=10.0,
-    bpm_max=22.0
+    bpm_max=22.0,
+    auto_min=0.5   # 🔸 threshold for autocorrelation quality
 ):
     if channel_name not in channel_dataframes:
         raise KeyError(f"Channel '{channel_name}' not found.")
@@ -88,7 +104,7 @@ def run_flow_qc(
                 json.dump({"per_epoch": [], "per_metric": {}, "overall": empty}, f, indent=2)
         return [], {}, empty
 
-    # time base
+    # --- prepare time base ---
     t0_ns = t_abs_ns[0]
     t_sec = (t_abs_ns - t0_ns) / 1e9
     t0_dt = datetime.fromtimestamp(t0_ns / 1e9, tz=timezone.utc)
@@ -123,6 +139,11 @@ def run_flow_qc(
         if not np.isfinite(bpm):
             bpm = bpm_welch(seg_filt, fs)
 
+        # --- Autocorrelation ---
+        ac_score = autocorr_quality(seg_filt, fs)
+        bad_auto = bool(np.isfinite(ac_score) and ac_score < auto_min)
+
+        # --- QC flags ---
         bad_clip = bool(np.isfinite(clip) and clip > clipping_max)
         bad_flat = bool(np.isfinite(flat) and flat > flatline_max)
         bad_miss = bool(np.isfinite(miss) and miss > missing_max)
@@ -130,24 +151,27 @@ def run_flow_qc(
         bad_bpm_low = bool(np.isfinite(bpm) and bpm < bpm_min)
         bad_bpm_high = bool(np.isfinite(bpm) and bpm > bpm_max)
         bad_bpm = bool(bad_bpm_low or bad_bpm_high or bad_bpm_nan)
-        bad_epoch = bool(bad_clip or bad_flat or bad_miss or bad_bpm)
+        bad_epoch = bool(bad_clip or bad_flat or bad_miss or bad_bpm or bad_auto)
 
         per_epoch.append({
             "Epoch": int(i),
             "Start_Time_ISO": (t0_dt + timedelta(seconds=float(t_sec[s]))).isoformat(),
             "End_Time_ISO": (t0_dt + timedelta(seconds=float(t_sec[e - 1]))).isoformat(),
-            "Clipping_Ratio": None if not np.isfinite(clip) else float(clip),
-            "Flatline_Ratio": None if not np.isfinite(flat) else float(flat),
-            "Missing_Ratio": None if not np.isfinite(miss) else float(miss),
-            "BPM": None if not np.isfinite(bpm) else float(bpm),
+            "Clipping_Ratio": float(clip) if np.isfinite(clip) else None,
+            "Flatline_Ratio": float(flat) if np.isfinite(flat) else None,
+            "Missing_Ratio": float(miss) if np.isfinite(miss) else None,
+            "BPM": float(bpm) if np.isfinite(bpm) else None,
+            "AutoCorr_Q": float(ac_score) if np.isfinite(ac_score) else None,
             "Bad_Epoch": bad_epoch,
             "Bad_Clip": bad_clip,
             "Bad_Flatline": bad_flat,
             "Bad_Missing": bad_miss,
             "Bad_BPM": bad_bpm,
-            "Raw_Data": seg.tolist()  # ✅ added raw data for this epoch
+            "Bad_AutoCorr": bad_auto,
+            "Raw_Data": seg.tolist()
         })
 
+    # --- summaries ---
     total = len(per_epoch)
     def count(flag): return sum(1 for r in per_epoch if r[flag])
     per_metric_json = {
@@ -155,6 +179,7 @@ def run_flow_qc(
         "Flatline": ratio_summary(count("Bad_Flatline"), total),
         "Missing": ratio_summary(count("Bad_Missing"), total),
         "BPM": ratio_summary(count("Bad_BPM"), total),
+        "AutoCorr_Q": ratio_summary(count("Bad_AutoCorr"), total)
     }
     overall_bad = count("Bad_Epoch")
     overall_json = {
@@ -165,18 +190,18 @@ def run_flow_qc(
         "bad_ratio": round(overall_bad / total, 3) if total else None,
     }
 
+    # --- optional JSON save ---
     if json_path:
         with open(json_path, "w") as f:
             json.dump(
-                {"per_epoch": per_epoch,
-                 "per_metric": per_metric_json,
-                 "overall": overall_json},
+                {"per_epoch": per_epoch, "per_metric": per_metric_json, "overall": overall_json},
                 f, indent=2
             )
 
-    # plotting
+    # --- plotting ---
     if plot in ("overall", "per-metric", "both"):
         times = [t0_dt + timedelta(seconds=float(s)) for s in t_sec]
+
         def shade(ax, flag_key):
             for r in per_epoch:
                 st, et = datetime.fromisoformat(r["Start_Time_ISO"]), datetime.fromisoformat(r["End_Time_ISO"])
@@ -196,7 +221,8 @@ def run_flow_qc(
                 "Clipping": "Bad_Clip",
                 "Flatline": "Bad_Flatline",
                 "Missing": "Bad_Missing",
-                "BPM": "Bad_BPM"
+                "BPM": "Bad_BPM",
+                "AutoCorr_Q": "Bad_AutoCorr"
             }
             for metric, flag in flag_map.items():
                 fig, ax = plt.subplots(figsize=(14, 5))
