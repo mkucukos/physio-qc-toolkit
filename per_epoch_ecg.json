@@ -1545,7 +1545,7 @@
     "Bad_Missing": false,
     "Bad_Baseline": true,
     "Bad_HR": false,
-    "Bad_SNR": true
+    "Bad_SNR": false
   },
   {
     "Epoch": 87,
@@ -1761,7 +1761,7 @@
     "Bad_Missing": false,
     "Bad_Baseline": true,
     "Bad_HR": false,
-    "Bad_SNR": true
+    "Bad_SNR": false
   },
   {
     "Epoch": 99,
@@ -1779,7 +1779,7 @@
     "Bad_Missing": false,
     "Bad_Baseline": true,
     "Bad_HR": false,
-    "Bad_SNR": true
+    "Bad_SNR": false
   },
   {
     "Epoch": 100,
@@ -1845,13 +1845,13 @@
     "Baseline_Wander_Ratio": 0.1395933097395968,
     "HR_Mean": 71.29267185180873,
     "SNR_dB": 5.890611849760502,
-    "Bad_Epoch": true,
+    "Bad_Epoch": false,
     "Bad_Clip": false,
     "Bad_Flatline": false,
     "Bad_Missing": false,
     "Bad_Baseline": false,
     "Bad_HR": false,
-    "Bad_SNR": true
+    "Bad_SNR": false
   },
   {
     "Epoch": 104,
@@ -1941,7 +1941,7 @@
     "Bad_Missing": false,
     "Bad_Baseline": true,
     "Bad_HR": false,
-    "Bad_SNR": true
+    "Bad_SNR": false
   },
   {
     "Epoch": 109,
@@ -1959,7 +1959,7 @@
     "Bad_Missing": false,
     "Bad_Baseline": true,
     "Bad_HR": false,
-    "Bad_SNR": true
+    "Bad_SNR": false
   },
   {
     "Epoch": 110,
@@ -1995,7 +1995,7 @@
     "Bad_Missing": false,
     "Bad_Baseline": true,
     "Bad_HR": false,
-    "Bad_SNR": true
+    "Bad_SNR": false
   },
   {
     "Epoch": 112,
@@ -2031,7 +2031,7 @@
     "Bad_Missing": false,
     "Bad_Baseline": true,
     "Bad_HR": false,
-    "Bad_SNR": true
+    "Bad_SNR": false
   },
   {
     "Epoch": 114,
@@ -2049,7 +2049,7 @@
     "Bad_Missing": false,
     "Bad_Baseline": true,
     "Bad_HR": false,
-    "Bad_SNR": true
+    "Bad_SNR": false
   },
   {
     "Epoch": 115,
@@ -2085,7 +2085,7 @@
     "Bad_Missing": false,
     "Bad_Baseline": true,
     "Bad_HR": false,
-    "Bad_SNR": true
+    "Bad_SNR": false
   },
   {
     "Epoch": 117,
@@ -2103,7 +2103,7 @@
     "Bad_Missing": false,
     "Bad_Baseline": true,
     "Bad_HR": false,
-    "Bad_SNR": true
+    "Bad_SNR": false
   },
   {
     "Epoch": 118,
@@ -2139,7 +2139,7 @@
     "Bad_Missing": false,
     "Bad_Baseline": true,
     "Bad_HR": false,
-    "Bad_SNR": true
+    "Bad_SNR": false
   },
   {
     "Epoch": 120,
@@ -2175,7 +2175,7 @@
     "Bad_Missing": false,
     "Bad_Baseline": true,
     "Bad_HR": false,
-    "Bad_SNR": true
+    "Bad_SNR": false
   },
   {
     "Epoch": 122,
@@ -4581,13 +4581,13 @@
     "Baseline_Wander_Ratio": 0.08117477879168024,
     "HR_Mean": 74.12809767430383,
     "SNR_dB": 5.7101120732286414,
-    "Bad_Epoch": true,
+    "Bad_Epoch": false,
     "Bad_Clip": false,
     "Bad_Flatline": false,
     "Bad_Missing": false,
     "Bad_Baseline": false,
     "Bad_HR": false,
-    "Bad_SNR": true
+    "Bad_SNR": false
   },
   {
     "Epoch": 256,
@@ -4677,7 +4677,7 @@
     "Bad_Missing": false,
     "Bad_Baseline": true,
     "Bad_HR": false,
-    "Bad_SNR": true
+    "Bad_SNR": false
   },
   {
     "Epoch": 261,
@@ -11907,13 +11907,13 @@
     "Baseline_Wander_Ratio": 0.09541391164774937,
     "HR_Mean": 68.59012020839324,
     "SNR_dB": 5.405460778112276,
-    "Bad_Epoch": true,
+    "Bad_Epoch": false,
     "Bad_Clip": false,
     "Bad_Flatline": false,
     "Bad_Missing": false,
     "Bad_Baseline": false,
     "Bad_HR": false,
-    "Bad_SNR": true
+    "Bad_SNR": false
   },
   {
     "Epoch": 663,
@@ -15549,7 +15549,7 @@
     "Bad_Missing": false,
     "Bad_Baseline": true,
     "Bad_HR": false,
-    "Bad_SNR": true
+    "Bad_SNR": false
   },
   {
     "Epoch": 865,
@@ -16647,7 +16647,7 @@
     "Bad_Missing": false,
     "Bad_Baseline": true,
     "Bad_HR": false,
-    "Bad_SNR": true
+    "Bad_SNR": false
   },
   {
     "Epoch": 926,
@@ -18171,13 +18171,13 @@
     "Baseline_Wander_Ratio": 0.07032495954410754,
     "HR_Mean": 70.11769757389561,
     "SNR_dB": 5.6944496232783335,
-    "Bad_Epoch": true,
+    "Bad_Epoch": false,
     "Bad_Clip": false,
     "Bad_Flatline": false,
     "Bad_Missing": false,
     "Bad_Baseline": false,
     "Bad_HR": false,
-    "Bad_SNR": true
+    "Bad_SNR": false
   },
   {
     "Epoch": 1011,
@@ -18189,13 +18189,13 @@
     "Baseline_Wander_Ratio": 0.021320160733392962,
     "HR_Mean": 68.49260831201158,
     "SNR_dB": 5.278831376130324,
-    "Bad_Epoch": true,
+    "Bad_Epoch": false,
     "Bad_Clip": false,
     "Bad_Flatline": false,
     "Bad_Missing": false,
     "Bad_Baseline": false,
     "Bad_HR": false,
-    "Bad_SNR": true
+    "Bad_SNR": false
   },
   {
     "Epoch": 1012,
@@ -18441,13 +18441,13 @@
     "Baseline_Wander_Ratio": 0.10312772287160663,
     "HR_Mean": 63.50364439318188,
     "SNR_dB": 5.6700554152928975,
-    "Bad_Epoch": true,
+    "Bad_Epoch": false,
     "Bad_Clip": false,
     "Bad_Flatline": false,
     "Bad_Missing": false,
     "Bad_Baseline": false,
     "Bad_HR": false,
-    "Bad_SNR": true
+    "Bad_SNR": false
   },
   {
     "Epoch": 1026,
