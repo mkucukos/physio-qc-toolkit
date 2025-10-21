@@ -43,18 +43,36 @@ def bpm_welch(seg, fs, band=(0.10, 1.00)):
     return np.nan
 
 # ---- autocorrelation quality ----
-def autocorr_quality(seg, fs, max_lag_sec=10):
-    """Compute normalized autocorrelation peak within lag window."""
+def autocorr_quality(seg, fs, max_lag_sec=10,
+                     digital_min=-100, digital_max=100, clip_thresh=0.01):
+    """Compute normalized autocorrelation peak within lag window.
+    Returns 0 for flatline or heavily clipped segments.
+    """
     if len(seg) < fs:
         return np.nan
+
+    # --- Flatline detection ---
+    if np.nanstd(seg) < 1e-6:  # nearly constant signal
+        return 0.0  # ✅ flatline → poor autocorr
+
+    # --- Clipping detection ---
+    lower, upper = digital_min * (1 - clip_thresh), digital_max * (1 - clip_thresh)
+    clipped = (seg <= lower) | (seg >= upper)
+    if np.mean(clipped) >= clip_thresh:
+        return 0.0  # ✅ heavily clipped → poor autocorr
+
+    # --- Autocorrelation computation ---
     seg = seg - np.nanmean(seg)
     ac = correlate(seg, seg, mode='full')
-    ac = ac[len(ac)//2:]
+    ac = ac[len(ac)//2:]  # keep positive lags
+
     if np.nanmax(np.abs(ac)) == 0:
         return np.nan
+
     ac /= np.nanmax(ac)
     lags = np.arange(len(ac)) / fs
     mask = (lags >= 1.0) & (lags <= max_lag_sec)
+
     return float(np.nanmax(ac[mask])) if np.any(mask) else np.nan
 
 def ratio_summary(bad_n, total):
