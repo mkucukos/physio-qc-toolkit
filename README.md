@@ -121,8 +121,8 @@ Each 30-second epoch is shaded according to QC results:
 
 ### 🌬️ Flow Signal Quality Examples
 
-| Clipping Ratio | BPM (Respiration Rate) |
-|:----------------:|:----------------------:|
+| Clipping Ratio | BPM (Respiration Rate) | Autocorrelation QC |
+|:---------------:|:----------------------:|:------------------:|
 | ![Flow Clipping QC](assets/flow_clipping.png) | ![Flow BPM QC](assets/flow_bpm.png) | ![Autocorrelation QC](assets/autocorrelation.png) |
 
 License
