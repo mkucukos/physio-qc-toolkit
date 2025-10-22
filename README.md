@@ -45,7 +45,7 @@ physio-qc-toolkit/
     - **Missing Ratio** (`>50%` = bad)  
     - **Baseline Wander** (`>15%` power < 0.3 Hz = bad)  
     - **Heart Rate Range** (`25–220 bpm`)  
-    - **SNR** (`<5 dB` = bad)  
+    - **SNR** (`<6 dB` = bad)  
   - **Flow Signals (Thermistor / Pressure)**  
     - **Clipping Ratio** (`>50%` = bad)  
     - **Flatline Ratio** (`>50%` = bad)  
