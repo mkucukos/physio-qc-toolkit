@@ -33,8 +33,7 @@ physio-qc-toolkit/
 ├── LICENSE
 ├── README.md
 └── __init__.py
----
-
+```
 ## **Features**
 
 - **EDF Reader:** Handles EDF headers, sampling rates, labels, and transducers  
