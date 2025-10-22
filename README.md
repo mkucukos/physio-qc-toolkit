@@ -116,7 +116,7 @@ Each 30-second epoch is shaded according to QC results:
 
 | Clipping Ratio | Baseline Wander | SNR (Signal-to-Noise Ratio) |
 |:---------------:|:----------------:|:---------------------------:|
-| <img src="assets/clipping.png" width="300"> | <img src="assets/baseline.png" width="300"> | <img src="assets/SNR.png" width="300"> |
+| <img src="assets/clipping.png" width="500"> | <img src="assets/baseline.png" width="500"> | <img src="assets/SNR.png" width="500"> |
 
 
 ### 🔉 Signal-to-Noise Ratio (SNR) Calculation
@@ -160,13 +160,13 @@ A higher SNR indicates that cardiac activity dominates noise sources such as mot
   </tr>
   <tr>
     <td align="center">
-      <img src="assets/flow_clipping.png" width="300">
+      <img src="assets/flow_clipping.png" width="500">
     </td>
     <td align="center">
-      <img src="assets/flow_bpm.png" width="300">
+      <img src="assets/flow_bpm.png" width="500">
     </td>
     <td align="center">
-      <img src="assets/autocorrelation.png" width="300">
+      <img src="assets/autocorrelation.png" width="500">
     </td>
   </tr>
 </table>
