@@ -52,7 +52,8 @@ physio-qc-toolkit/
     - **Clipping Ratio** (`>50%` = bad)  
     - **Flatline Ratio** (`>50%` = bad)  
     - **Missing Ratio** (`>50%` = bad)  
-    - **Respiration Rate** (`<7 bpm`, `>30 bpm`, or NaN = bad)  
+    - **Respiration Rate** (`<10 bpm`, `>22 bpm`, or NaN = bad)  
+    - **Autocorrelation** Quality (<0.5 = bad; low periodicity indicates irregular or noisy respiration)
 - **Visualization:**  
   - Per-metric and overall QC plots (🟢 green = good, 🔴 red = bad)  
 - **JSON Export:**  
@@ -117,13 +118,53 @@ Each 30-second epoch is shaded according to QC results:
 |:---------------:|:----------------:|:---------------------------:|
 | ![Clipping Ratio QC](assets/clipping.png) | ![Baseline Wander QC](assets/baseline.png) | ![SNR QC](assets/SNR.png) |
 
+
+### 🔉 Signal-to-Noise Ratio (SNR) Calculation
+
+The **SNR metric** quantifies the ratio of meaningful ECG activity to background noise, providing an estimate of overall ECG signal integrity.
+
+#### ⚙️ How It Works
+
+During feature extraction, short **±0.1 s windows** centered around each detected **R-peak** are isolated.  
+For each heartbeat:
+
+1. Extract the **raw ECG segment** (`ecg`) and the **cleaned version** (`ecg_cleaned`)  
+2. Aggregate all paired segments across beats  
+3. Compute **signal power** and **noise power**
+
+\[
+\text{SNR (dB)} = 10 \cdot \log_{10}\!\left(\frac{\text{Signal Power}}{\text{Noise Power}}\right)
+\]
+
+where:  
+
+- **Signal Power = Var(raw ECG)**  
+- **Noise Power = Var(raw ECG − cleaned ECG)**  
+
 ---
+
+#### 📈 Interpretation
+
+| SNR Range | Signal Quality | Description |
+|:-----------:|:---------------:|:-------------|
+| **> 5 dB** | 🟢 Good | Clean ECG waveform, stable R-peaks |
+| **≤ 5 dB** | 🔴 Poor | Noisy or motion-corrupted ECG, unstable morphology |
+
+A higher SNR indicates that cardiac activity dominates noise sources such as motion artifacts, electrode detachment, or baseline wander.
 
 ### 🌬️ Flow Signal Quality Examples
 
 | Clipping Ratio | BPM (Respiration Rate) | Autocorrelation QC |
 |:---------------:|:----------------------:|:------------------:|
 | ![Flow Clipping QC](assets/flow_clipping.png) | ![Flow BPM QC](assets/flow_bpm.png) | ![Autocorrelation QC](assets/autocorrelation.png) |
+
+### Autocorrelation Quality (Respiratory Regularity)
+
+The autocorrelation quality metric evaluates how periodic and consistent a respiratory or flow signal is over time.
+It measures the similarity of a signal with a time-shifted version of itself within a short lag window (typically up to 10 seconds).
+A high autocorrelation peak (close to 1.0) indicates stable, rhythmic breathing cycles with well-defined periodicity.
+A low autocorrelation value (near 0.0) suggests irregular or noisy respiration, such as disrupted airflow, clipping, or flatline segments.
+The method automatically penalizes heavily clipped or nearly constant (flatline) signals by assigning them a score of 0.
 
 License
 This project is licensed under the MIT License — see the LICENSE
