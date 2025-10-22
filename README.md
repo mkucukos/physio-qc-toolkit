@@ -116,7 +116,7 @@ Each 30-second epoch is shaded according to QC results:
 
 | Clipping Ratio | Baseline Wander | SNR (Signal-to-Noise Ratio) |
 |:---------------:|:----------------:|:---------------------------:|
-| ![Clipping Ratio QC](assets/clipping.png) | ![Baseline Wander QC](assets/baseline.png) | ![SNR QC](assets/SNR.png) |
+| <img src="assets/clipping.png" width="300"> | <img src="assets/baseline.png" width="300"> | <img src="assets/SNR.png" width="300"> |
 
 
 ### 🔉 Signal-to-Noise Ratio (SNR) Calculation
@@ -152,9 +152,24 @@ A higher SNR indicates that cardiac activity dominates noise sources such as mot
 
 ### 🌬️ Flow Signal Quality Examples
 
-| Clipping Ratio | BPM (Respiration Rate) | Autocorrelation QC |
-|:---------------:|:----------------------:|:------------------:|
-| ![Flow Clipping QC](assets/flow_clipping.png) | ![Flow BPM QC](assets/flow_bpm.png) | ![Autocorrelation QC](assets/autocorrelation.png) |
+<table>
+  <tr>
+    <th>Clipping Ratio</th>
+    <th>BPM (Respiration Rate)</th>
+    <th>Autocorrelation QC</th>
+  </tr>
+  <tr>
+    <td align="center">
+      <img src="assets/flow_clipping.png" width="300">
+    </td>
+    <td align="center">
+      <img src="assets/flow_bpm.png" width="300">
+    </td>
+    <td align="center">
+      <img src="assets/autocorrelation.png" width="300">
+    </td>
+  </tr>
+</table>
 
 ### Autocorrelation Quality (Respiratory Regularity)
 
