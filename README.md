@@ -123,7 +123,7 @@ Each 30-second epoch is shaded according to QC results:
 
 | Clipping Ratio | BPM (Respiration Rate) |
 |:----------------:|:----------------------:|
-| ![Flow Clipping QC](assets/flow_clipping.png) | ![Flow BPM QC](assets/flow_bpm.png) |
+| ![Flow Clipping QC](assets/flow_clipping.png) | ![Flow BPM QC](assets/flow_bpm.png) | ![Autocorrelation QC](assets/autocorrelation.png) |
 
 License
 This project is licensed under the MIT License — see the LICENSE
