@@ -132,10 +132,8 @@ For each heartbeat:
 2. Aggregate all paired segments across beats  
 3. Compute **signal power** and **noise power**
 
-\[
-\text{SNR (dB)} = 10 \cdot \log_{10}\!\left(\frac{\text{Signal Power}}{\text{Noise Power}}\right)
-\]
-
+**Formula:**  
+`SNR (dB) = 10 × log10(Signal Power / Noise Power)`
 where:  
 
 - **Signal Power = Var(raw ECG)**  
