@@ -62,7 +62,7 @@ def autocorr_quality(seg, fs, max_lag_sec=10,
         return 0.0  # ✅ heavily clipped → poor autocorr
 
     # --- Autocorrelation computation ---
-    seg = seg - np.nanmean(seg)
+    seg = (seg - np.nanmean(seg)) / (np.nanstd(seg) + 1e-8)
     ac = correlate(seg, seg, mode='full')
     ac = ac[len(ac)//2:]  # keep positive lags
 
