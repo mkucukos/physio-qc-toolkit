@@ -26,7 +26,6 @@ This toolkit provides an **end-to-end pipeline** to:
 
 ```bash
 physio-qc-toolkit/
-├── ecg/                     # ECG-specific feature extraction (e.g., HR, HRV, SNR)
 ├── quality/                 # QC pipelines and visualization functions
 ├── read/                    # EDF file reading utilities
 ├── edf_signal_quality.ipynb # Main Jupyter notebook (run + visualize QC)
