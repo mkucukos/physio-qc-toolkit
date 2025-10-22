@@ -79,7 +79,7 @@ qc_df, per_metric_json, overall_json = run_ecg_qc(
         "baseline_max": 0.15,
         "hr_min": 25.0,
         "hr_max": 220.0,
-        "snr_min": 5.0,
+        "snr_min": 6.0,
     },
     json_path="qc_summary.json",
     plot="per-metric"
@@ -143,8 +143,8 @@ where:
 
 | SNR Range | Signal Quality | Description |
 |:-----------:|:---------------:|:-------------|
-| **> 5 dB** | 🟢 Good | Clean ECG waveform, stable R-peaks |
-| **≤ 5 dB** | 🔴 Poor | Noisy or motion-corrupted ECG, unstable morphology |
+| **> 6 dB** | 🟢 Good | Clean ECG waveform, stable R-peaks |
+| **≤ 6 dB** | 🔴 Poor | Noisy or motion-corrupted ECG, unstable morphology |
 
 A higher SNR indicates that cardiac activity dominates noise sources such as motion artifacts, electrode detachment, or baseline wander.
 
