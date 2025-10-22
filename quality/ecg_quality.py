@@ -110,6 +110,7 @@ def run_ecg_qc(
         "hr_min": 25.0,
         "hr_max": 220.0,
         "snr_min": 5.0,
+        "auto_min": 0.5,  # ✅ Added Autocorrelation threshold
     }
     if thresholds:
         th.update(thresholds)
@@ -156,8 +157,47 @@ def run_ecg_qc(
             return np.nan
         return float(np.sum(pxx[f <= cutoff]) / total)
 
+    # ✅ Added Autocorrelation Function
+    def autocorr_quality(seg, fs, max_lag_sec=3.0,
+                        digital_min=-8333, digital_max=8333, clip_thresh=0.01):
+        """
+        Compute normalized autocorrelation on filtered ECG.
+        Returns 0 for flatline or heavily clipped segments.
+        """
+
+        if len(seg) < fs:
+            return np.nan
+
+        # --- Flatline check ---
+        if np.nanstd(seg) < 1e-6:
+            return 0.0  # flatline → poor autocorr
+
+        # --- Clipping check ---
+        lower, upper = digital_min * (1 - clip_thresh), digital_max * (1 - clip_thresh)
+        clipped = np.logical_or(seg <= lower, seg >= upper)
+        if np.mean(clipped) >= clip_thresh:
+            return 0.0  # heavily clipped → poor autocorr
+
+        # --- Bandpass filter (0.5–25 Hz) ---
+        b, a = butter(4, (0.5, 25), btype='bandpass', fs=fs)
+        seg_filt = filtfilt(b, a, seg, padlen=min(3 * max(len(a), len(b)), len(seg) - 1))
+        seg_filt = (seg_filt - np.nanmean(seg_filt)) / (np.nanstd(seg_filt) + 1e-8)
+
+        # --- Autocorrelation ---
+        ac = np.correlate(seg_filt, seg_filt, mode='full')
+        ac = ac[len(ac)//2:]  # keep positive lags
+        if np.nanmax(np.abs(ac)) == 0:
+            return np.nan
+
+        # --- Normalize by energy or short-lag amplitude to reduce edge bias ---
+        ac /= np.nanmax(ac[: int(fs * 0.5)])  # normalize by short-lag region (≤0.5 s)
+
+        lags = np.arange(len(ac)) / fs
+        mask = (lags >= 0.25) & (lags <= max_lag_sec)
+
+        return float(np.nanmax(ac[mask])) if np.any(mask) else np.nan
+
     # --- epoch loop ---
-        # --- epoch loop ---
     n_epochs = int(np.ceil(len(signal) / samples_per_epoch))
     results = []
 
@@ -174,6 +214,7 @@ def run_ecg_qc(
         flat = flatline_ratio(epoch)
         miss = missing_ratio(epoch, fs, epoch_len)
         base = baseline_wander_ratio(epoch, fs)
+        auto_q = autocorr_quality(epoch, fs)  # ✅ Added Autocorrelation metric
 
         hr_mean = snr_db = np.nan
         try:
@@ -187,7 +228,9 @@ def run_ecg_qc(
         bad_base = (not np.isnan(base)) and (base > th["baseline_max"])
         bad_hr = (np.isnan(hr_mean)) or (hr_mean < th["hr_min"]) or (hr_mean > th["hr_max"])
         bad_snr = (np.isnan(snr_db)) or (snr_db < th["snr_min"])
-        bad_epoch = bool(bad_clip or bad_flat or bad_miss or bad_base or bad_hr or bad_snr)
+        bad_auto = (np.isnan(auto_q)) or (auto_q < th["auto_min"])  # ✅ Added Autocorr flag
+
+        bad_epoch = bool(bad_clip or bad_flat or bad_miss or bad_base or bad_hr or bad_snr or bad_auto)
 
         results.append({
             "Epoch": int(i + 1),
@@ -199,6 +242,7 @@ def run_ecg_qc(
             "Baseline_Wander_Ratio": float(base) if not np.isnan(base) else None,
             "HR_Mean": float(hr_mean) if not np.isnan(hr_mean) else None,
             "SNR_dB": float(snr_db) if not np.isnan(snr_db) else None,
+            "AutoCorr_Q": float(auto_q) if not np.isnan(auto_q) else None,  # ✅ Added Autocorr_Q
             "Bad_Epoch": bool(bad_epoch),
             "Bad_Clip": bool(bad_clip),
             "Bad_Flatline": bool(bad_flat),
@@ -206,7 +250,8 @@ def run_ecg_qc(
             "Bad_Baseline": bool(bad_base),
             "Bad_HR": bool(bad_hr),
             "Bad_SNR": bool(bad_snr),
-            "Raw_Data": epoch.tolist()  # <-- added line
+            "Bad_AutoCorr": bool(bad_auto),  # ✅ Added flag
+            "Raw_Data": epoch.tolist()
         })
 
     # --- per-metric summaries ---
@@ -228,6 +273,7 @@ def run_ecg_qc(
         "Baseline": ratio_summary("Bad_Baseline"),
         "HR_Mean": ratio_summary("Bad_HR"),
         "SNR_dB": ratio_summary("Bad_SNR"),
+        "AutoCorr_Q": ratio_summary("Bad_AutoCorr"),  # ✅ Added to per-metric summary
     }
 
     overall_bad = sum(r["Bad_Epoch"] for r in results)
@@ -238,19 +284,6 @@ def run_ecg_qc(
         "good_ratio": round((total - overall_bad) / total, 3) if total else np.nan,
         "bad_ratio": round(overall_bad / total, 3) if total else np.nan,
     }
-
-    # --- JSON-safe conversion ---
-    def _json_safe(o):
-        if isinstance(o, (np.integer,)):
-            return int(o)
-        elif isinstance(o, (np.floating,)):
-            return float(o)
-        elif isinstance(o, (np.bool_,)):
-            return bool(o)
-        elif isinstance(o, (np.ndarray,)):
-            return o.tolist()
-        else:
-            return str(o)
 
     # --- Plotting ---
     def _shade(ax, flag):
@@ -277,6 +310,7 @@ def run_ecg_qc(
             "Baseline_Wander_Ratio": "Bad_Baseline",
             "HR_Mean": "Bad_HR",
             "SNR_dB": "Bad_SNR",
+            "AutoCorr_Q": "Bad_AutoCorr",  # ✅ Added Autocorr plot
         }
         for metric, flag in metric_flag_map.items():
             fig, ax = plt.subplots(figsize=(14, 5))
