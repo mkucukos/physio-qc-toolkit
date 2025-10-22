@@ -1,6 +1,6 @@
 #  physio-qc-toolkit
 
-A lightweight **Python toolkit** for **physiological signal quality control (QC)** and visualization across multimodal PSG and wearable data (e.g., ECG, thermistor airflow, pressure, PPG).
+A lightweight **Python toolkit** for **physiological signal quality control (QC)** and visualization across multimodal PSG and wearable data (e.g., ECG, thermistor airflow, pressure).
 
 ---
 
