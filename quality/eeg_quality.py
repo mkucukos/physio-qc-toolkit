@@ -47,9 +47,21 @@ def calculate_quality(signal, sampling_rate, channel_names=None,
     for ci, ch in enumerate(chan_range):
         sig = signal[ci, :n_epochs*epoch_samps].reshape(n_epochs, epoch_samps)
         for ei, ep in enumerate(sig):
+
+            # --- Frequency-domain artifact ratio ---
             F = np.abs(np.fft.fft(ep))[1:500]
-            F = np.log10(F / np.mean(F))
-            art_val = (np.mean(F[0:20]) / np.abs(np.mean(F[20:50]))) / np.abs(np.mean(F[400:500]))
+            mean_F = np.mean(F) + 1e-8  # prevent division by zero
+            F = np.log10(F / mean_F)
+
+            mid_mean = np.abs(np.mean(F[20:50])) + 1e-8
+            high_mean = np.abs(np.mean(F[400:500])) + 1e-8
+            art_val = (np.mean(F[0:20]) / mid_mean) / high_mean
+
+            # --- Flatline detection (NEW) ---
+            flat_ratio = np.mean(np.abs(np.diff(ep)) < 1e-6)
+            if flat_ratio > 0.90:
+                art_val = ar_thresh + 10  # mark as bad
+
             artifact_scores[ci, ei] = art_val
             if art_val > ar_thresh:
                 flags[ci, ei] = True
