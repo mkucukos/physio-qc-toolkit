@@ -148,6 +148,40 @@ where:
 
 A higher SNR indicates that cardiac activity dominates noise sources such as motion artifacts, electrode detachment, or baseline wander.
 
+### ⚡ ECG Inversion Detection
+
+The **Inversion QC metric** identifies ECG epochs with **reversed polarity**, often caused by **electrode misplacement** or **inverted leads**.  
+It quantifies polarity reversal by comparing each cleaned ECG segment with its absolute version.
+
+#### **Formula**
+
+`inv_ratio = (1 - corr(ECG, |ECG|)) / 2`  
+where:  
+
+- **inv_ratio < 0.5** → upright ECG (normal polarity)  
+- **inv_ratio > 0.5** → inverted ECG (reversed polarity)
+
+---
+
+#### 📈 Interpretation
+
+| inv_ratio Range | Signal Quality | Description |
+|:----------------:|:---------------:|:-------------|
+| **< 0.5** | 🟢 Normal | Upright ECG waveform, correct polarity |
+| **≥ 0.5** | 🔴 Inverted | Reversed ECG polarity, flipped P–QRS–T waves |
+
+A higher inversion ratio indicates stronger waveform reversal, typically due to lead reversal or incorrect electrode placement.
+
+---
+
+#### 🩺 Visualization
+
+| Inversion Detection |
+|:-------------------:|
+| ![Inversion QC](assets/inversion.png) |  
+
+---
+
 ### 🌬️ Flow Signal Quality Examples
 
 | Clipping Ratio | BPM (Respiration Rate) | Autocorrelation QC |
