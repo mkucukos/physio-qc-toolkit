@@ -155,3 +155,46 @@ def read_edf_to_dataframes(file_path: str) -> Dict[str, pd.DataFrame]:
                 f.close()
         except Exception:
             pass
+
+
+import pandas as pd
+
+def get_sampling_rate(channel_label, edf_metadata_df):
+    """
+    Fetch the sampling frequency automatically from EDF metadata.
+    Handles duplicate labels like 'Flow Patient (Thermistor)' by normalizing
+    the Transducer field and allowing flexible matching.
+    """
+
+    # --- Create normalized helper columns ---
+    df = edf_metadata_df.copy()
+    df["Label_norm"] = df["Label"].astype(str).str.strip().str.lower()
+    df["Transducer_norm"] = df["Transducer"].astype(str).str.strip().str.lower()
+
+    # Build Unique_Label for clarity
+    df["Unique_Label"] = df.apply(
+        lambda row: f"{row['Label_norm']} ({row['Transducer_norm']})"
+        if row["Transducer_norm"] not in ["", "nan", "none"]
+        else row["Label_norm"],
+        axis=1
+    )
+
+    # Normalize the input query label
+    query = str(channel_label).strip().lower()
+
+    # --- Try exact match with Unique_Label first ---
+    match = df.loc[df["Unique_Label"] == query]
+
+    # --- Fallback: partial match (for robustness) ---
+    if len(match) == 0:
+        match = df.loc[
+            df["Unique_Label"].str.contains(query, na=False)
+            | df["Label_norm"].str.contains(query, na=False)
+            | df["Transducer_norm"].str.contains(query, na=False)
+        ]
+
+    if len(match) == 0:
+        print("Available normalized Unique_Label values:\n", df["Unique_Label"].unique())
+        raise ValueError(f"Sampling frequency not found for '{channel_label}'.")
+
+    return float(match.iloc[0]["Sample Frequency (Hz)"])
