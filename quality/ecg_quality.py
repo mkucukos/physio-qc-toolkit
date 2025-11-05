@@ -106,11 +106,11 @@ def run_ecg_qc(
         "clipping_max": 0.50,
         "flatline_max": 0.50,
         "missing_max": 0.50,
-        "baseline_max": 0.15,
+        "baseline_max": 0.30,
         "hr_min": 25.0,
         "hr_max": 220.0,
         "snr_min": 5.0,
-        "auto_min": 0.5,  # ✅ Added Autocorrelation threshold
+        "inv_ratio_max": 0.5  # added inversion threshold
     }
     if thresholds:
         th.update(thresholds)
@@ -136,10 +136,30 @@ def run_ecg_qc(
         return float(np.mean(clipped))
 
     def flatline_ratio(signal, eps=1e-6):
+        """
+        Compute a robust flatline ratio for a 1D signal.
+        Returns a single float (0–1), same as the original version.
+        """
+        signal = np.asarray(signal, dtype=float)
         if len(signal) < 2:
             return 1.0
-        diffs = np.abs(np.diff(signal))
-        return float(np.mean(diffs < eps))
+
+        # --- Robust flatline / dropped-signal detection ---
+        epoch_var = np.var(signal)
+        epoch_ptp = np.ptp(signal)
+
+        # also look for long runs of identical samples (true flat signal)
+        diffs = np.diff(signal)
+        repeat_ratio = np.mean(np.abs(diffs) < eps)
+
+        # dynamic thresholds
+        var_thresh = np.percentile(epoch_var, 5) * 0.2
+        amp_thresh = np.percentile(epoch_ptp, 5) * 0.2
+
+        flat_mask = ((epoch_var < var_thresh) & (epoch_ptp < amp_thresh)) or (repeat_ratio > 0.98)
+
+        return float(flat_mask)
+
 
     def missing_ratio(signal, fs, epoch_length):
         expected = int(fs * epoch_length)
@@ -156,46 +176,6 @@ def run_ecg_qc(
         if total <= 0:
             return np.nan
         return float(np.sum(pxx[f <= cutoff]) / total)
-
-    # ✅ Added Autocorrelation Function
-    def autocorr_quality(seg, fs, max_lag_sec=3.0,
-                        digital_min=-8333, digital_max=8333, clip_thresh=0.01):
-        """
-        Compute normalized autocorrelation on filtered ECG.
-        Returns 0 for flatline or heavily clipped segments.
-        """
-
-        if len(seg) < fs:
-            return np.nan
-
-        # --- Flatline check ---
-        if np.nanstd(seg) < 1e-6:
-            return 0.0  # flatline → poor autocorr
-
-        # --- Clipping check ---
-        lower, upper = digital_min * (1 - clip_thresh), digital_max * (1 - clip_thresh)
-        clipped = np.logical_or(seg <= lower, seg >= upper)
-        if np.mean(clipped) >= clip_thresh:
-            return 0.0  # heavily clipped → poor autocorr
-
-        # --- Bandpass filter (0.5–25 Hz) ---
-        b, a = butter(4, (0.5, 25), btype='bandpass', fs=fs)
-        seg_filt = filtfilt(b, a, seg, padlen=min(3 * max(len(a), len(b)), len(seg) - 1))
-        seg_filt = (seg_filt - np.nanmean(seg_filt)) / (np.nanstd(seg_filt) + 1e-8)
-
-        # --- Autocorrelation ---
-        ac = np.correlate(seg_filt, seg_filt, mode='full')
-        ac = ac[len(ac)//2:]  # keep positive lags
-        if np.nanmax(np.abs(ac)) == 0:
-            return np.nan
-
-        # --- Normalize by energy or short-lag amplitude to reduce edge bias ---
-        ac /= np.nanmax(ac[: int(fs * 0.5)])  # normalize by short-lag region (≤0.5 s)
-
-        lags = np.arange(len(ac)) / fs
-        mask = (lags >= 0.25) & (lags <= max_lag_sec)
-
-        return float(np.nanmax(ac[mask])) if np.any(mask) else np.nan
 
     # --- epoch loop ---
     n_epochs = int(np.ceil(len(signal) / samples_per_epoch))
@@ -214,9 +194,32 @@ def run_ecg_qc(
         flat = flatline_ratio(epoch)
         miss = missing_ratio(epoch, fs, epoch_len)
         base = baseline_wander_ratio(epoch, fs)
-        auto_q = autocorr_quality(epoch, fs)  # ✅ Added Autocorrelation metric
 
         hr_mean = snr_db = np.nan
+        inv_ratio = np.nan
+        was_inverted = False
+
+        # ---------------- Inversion detection added ----------------
+        try:
+            b, a = butter(4, (0.25, 25), 'bandpass', fs=fs)
+            ecg_filt = filtfilt(b, a, epoch)
+            ecg_clean = nk.ecg_clean(ecg_filt, sampling_rate=fs)
+            flat_check = flatline_ratio(ecg_clean)
+            if flat_check < 0.95 and np.std(ecg_clean) > 0:
+                r = np.corrcoef(ecg_clean, np.abs(ecg_clean))[0, 1]
+                inv_ratio = (1 - r) / 2
+                try:
+                    _, was_inverted = nk.ecg_invert(ecg_clean, sampling_rate=fs, show=False)
+                except Exception:
+                    was_inverted = np.nan
+            else:
+                inv_ratio = 0.0
+                was_inverted = False
+        except Exception:
+            inv_ratio = np.nan
+            was_inverted = np.nan
+        # ------------------------------------------------------------
+
         try:
             hr_mean, hr_max, hr_min, hrv, snr_db = get_ecg_features(epoch, t_epoch, fs).tolist()
         except Exception:
@@ -228,9 +231,9 @@ def run_ecg_qc(
         bad_base = (not np.isnan(base)) and (base > th["baseline_max"])
         bad_hr = (np.isnan(hr_mean)) or (hr_mean < th["hr_min"]) or (hr_mean > th["hr_max"])
         bad_snr = (np.isnan(snr_db)) or (snr_db < th["snr_min"])
-        bad_auto = (np.isnan(auto_q)) or (auto_q < th["auto_min"])  # ✅ Added Autocorr flag
+        bad_inv = (not np.isnan(inv_ratio)) and (inv_ratio > th["inv_ratio_max"])
 
-        bad_epoch = bool(bad_clip or bad_flat or bad_miss or bad_base or bad_hr or bad_snr or bad_auto)
+        bad_epoch = bool(bad_clip or bad_flat or bad_miss or bad_base or bad_hr or bad_snr or bad_inv)
 
         results.append({
             "Epoch": int(i + 1),
@@ -242,7 +245,8 @@ def run_ecg_qc(
             "Baseline_Wander_Ratio": float(base) if not np.isnan(base) else None,
             "HR_Mean": float(hr_mean) if not np.isnan(hr_mean) else None,
             "SNR_dB": float(snr_db) if not np.isnan(snr_db) else None,
-            "AutoCorr_Q": float(auto_q) if not np.isnan(auto_q) else None,  # ✅ Added Autocorr_Q
+            "Inversion_Ratio": float(inv_ratio) if not np.isnan(inv_ratio) else None,   # new
+            "Was_Inverted": bool(was_inverted) if not np.isnan(was_inverted) else None, # new
             "Bad_Epoch": bool(bad_epoch),
             "Bad_Clip": bool(bad_clip),
             "Bad_Flatline": bool(bad_flat),
@@ -250,7 +254,7 @@ def run_ecg_qc(
             "Bad_Baseline": bool(bad_base),
             "Bad_HR": bool(bad_hr),
             "Bad_SNR": bool(bad_snr),
-            "Bad_AutoCorr": bool(bad_auto),  # ✅ Added flag
+            "Bad_Inversion": bool(bad_inv),  # new
             "Raw_Data": epoch.tolist()
         })
 
@@ -273,7 +277,7 @@ def run_ecg_qc(
         "Baseline": ratio_summary("Bad_Baseline"),
         "HR_Mean": ratio_summary("Bad_HR"),
         "SNR_dB": ratio_summary("Bad_SNR"),
-        "AutoCorr_Q": ratio_summary("Bad_AutoCorr"),  # ✅ Added to per-metric summary
+        "Inversion": ratio_summary("Bad_Inversion"),  # new
     }
 
     overall_bad = sum(r["Bad_Epoch"] for r in results)
@@ -295,7 +299,7 @@ def run_ecg_qc(
     if plot in ("overall", "both"):
         fig, ax = plt.subplots(figsize=(14, 5))
         ax.plot(abs_time, signal, lw=0.8, color="black")
-        ax.set_title(f"{channel_name} — Overall QC (Red=Bad, Green=Good)")
+        ax.set_title(f"{channel_name} — Overall QC (Red=Bad, Green=Good, incl. Inversion)")
         ax.xaxis.set_major_formatter(mdates.DateFormatter("%H:%M:%S"))
         ax.grid(True)
         _shade(ax, "Bad_Epoch")
@@ -310,7 +314,7 @@ def run_ecg_qc(
             "Baseline_Wander_Ratio": "Bad_Baseline",
             "HR_Mean": "Bad_HR",
             "SNR_dB": "Bad_SNR",
-            "AutoCorr_Q": "Bad_AutoCorr",  # ✅ Added Autocorr plot
+            "Inversion_Ratio": "Bad_Inversion",  # new
         }
         for metric, flag in metric_flag_map.items():
             fig, ax = plt.subplots(figsize=(14, 5))

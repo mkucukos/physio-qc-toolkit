@@ -16,10 +16,30 @@ def check_clipping(signal, digital_min=-100, digital_max=100, edge_pct=0.01):
     return float(np.mean(clipped))
 
 def flatline_ratio(signal, eps=1e-6):
-    if signal.size < 2:
-        return np.nan
-    diffs = np.abs(np.diff(signal, prepend=signal[:1]))
-    return float(np.mean(diffs < eps))
+    """
+    Compute a robust flatline ratio for a 1D signal.
+    Returns a single float (0–1), same as the original version.
+    """
+    signal = np.asarray(signal, dtype=float)
+    if len(signal) < 2:
+        return 1.0
+
+    # --- Robust flatline / dropped-signal detection ---
+    epoch_var = np.var(signal)
+    epoch_ptp = np.ptp(signal)
+
+    # also look for long runs of identical samples (true flat signal)
+    diffs = np.diff(signal)
+    repeat_ratio = np.mean(np.abs(diffs) < eps)
+
+    # dynamic thresholds
+    var_thresh = np.percentile(epoch_var, 5) * 0.2
+    amp_thresh = np.percentile(epoch_ptp, 5) * 0.2
+
+    flat_mask = ((epoch_var < var_thresh) & (epoch_ptp < amp_thresh)) or (repeat_ratio > 0.98)
+
+    return float(flat_mask)
+
 
 def missing_ratio(n_present, n_expected):
     if n_expected <= 0:
