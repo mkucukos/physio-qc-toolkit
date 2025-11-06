@@ -199,27 +199,26 @@ def run_ecg_qc(
         inv_ratio = np.nan
         was_inverted = False
 
-        # ---------------- Inversion detection added ----------------
+        # ---------------- Inversion detection (NeuroKit2-only) ----------------
         try:
+            # Bandpass + clean ECG
             b, a = butter(4, (0.25, 25), 'bandpass', fs=fs)
             ecg_filt = filtfilt(b, a, epoch)
             ecg_clean = nk.ecg_clean(ecg_filt, sampling_rate=fs)
-            flat_check = flatline_ratio(ecg_clean)
-            if flat_check < 0.95 and np.std(ecg_clean) > 0:
-                r = np.corrcoef(ecg_clean, np.abs(ecg_clean))[0, 1]
-                inv_ratio = (1 - r) / 2
-                try:
-                    _, was_inverted = nk.ecg_invert(ecg_clean, sampling_rate=fs, show=False)
-                except Exception:
-                    was_inverted = np.nan
-            else:
-                inv_ratio = 0.0
-                was_inverted = False
+
+            # Apply NeuroKit2 inversion detection
+            try:
+                _, was_inverted = nk.ecg_invert(ecg_clean, sampling_rate=fs, show=False)
+            except Exception:
+                was_inverted = np.nan
+
+            # Assign inversion ratio (0 = normal, 1 = inverted)
+            inv_ratio = 1.0 if was_inverted else 0.0
+
         except Exception:
             inv_ratio = np.nan
             was_inverted = np.nan
-        # ------------------------------------------------------------
-
+        # ---------------------------------------------------------------------
         try:
             hr_mean, hr_max, hr_min, hrv, snr_db = get_ecg_features(epoch, t_epoch, fs).tolist()
         except Exception:
