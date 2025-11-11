@@ -46,6 +46,10 @@ physio-qc-toolkit/
     - **Baseline Wander** (`>15%` power < 0.3 Hz = bad)  
     - **Heart Rate Range** (`25–220 bpm`)  
     - **SNR** (`<6 dB` = bad)  
+  - **EEG Signals**
+    - **Artifact Ratio (AR):** `> 6` → **Artifactual**
+    - **Flatline Ratio:** `≥ 98%` identical samples → **Bad**
+    - **Spectral Normalization:** Normalize power within **1–40 Hz** before QC
   - **Flow Signals (Thermistor / Pressure)**  
     - **Clipping Ratio** (`>50%` = bad)  
     - **Flatline Ratio** (`>50%` = bad)  
@@ -181,6 +185,73 @@ A higher inversion ratio indicates stronger waveform reversal, typically due to 
 | ![Inversion QC](assets/inversion.png) |  
 
 ---
+
+## 🧠 EEG Artifact Detection QC
+
+Automatically identifies epochs contaminated by **low-frequency drift**, **movement**, or **high-frequency EMG** noise.  
+Each 30-second epoch is transformed via **FFT**, spectral amplitudes are **normalized by the mean power in 1–40 Hz**, and then **log-transformed (base 10)** prior to evaluation.
+
+**Triple-Ratio Metric (Formula)**  
+`AR = (SP_0.1–2Hz / SP_2–5Hz) × (1 / SP_40–50Hz)`  
+where **SP** is the mean spectral power within each band.  
+**Decision:** epochs with `AR > 6` → **Artifactual**.
+
+**Rationale**  
+Empirically derived from labeled sleep EEG: contaminated epochs consistently showed **elevated 0.1–2 Hz** (drift) and **40–50 Hz** (EMG) relative to **2–5 Hz** mid-band activity. Thresholds are **sleep-calibrated**; awake periods with strong alpha or muscle activity may be flagged more often.
+
+#### 📈 Interpretation
+
+| Metric | Threshold | Signal Quality | Description |
+|:------:|:---------:|:--------------:|:------------|
+| **AR ≤ 6** | Acceptable | 🟢 Clean | Minimal drift/EMG contamination |
+| **AR > 6**  | Artifactual | 🔴 Noisy | Drift and/or high-frequency EMG |
+
+**Visualization**
+
+| EEG Artifact Detection |
+|:-----------------------:|
+| ![EEG Artifact QC](assets/eeg_artifact.png) |
+repeats).
+
+
+## ⚡ EEG Flatline Detection QC
+
+Flags epochs with **abnormally low amplitude** or **loss of variability**, typically due to **electrode disconnection**, **high impedance**, or **amplifier saturation**.  
+Each 30-second epoch is evaluated using:
+1. **Signal variance**  
+2. **Peak-to-peak amplitude**  
+3. **Proportion of repeated consecutive samples**
+
+**Decision Rules**  
+- **Suppressed signal:** variance and peak-to-peak **below 20% of the 5th percentile** of all epochs → potential dropout  
+- **Complete flatline:** `≥ 98%` identical samples → **Flatlined**
+
+#### 📈 Interpretation
+
+| Metric | Threshold | Signal Quality | Description |
+|:------:|:---------:|:--------------:|:------------|
+| Variance & amplitude > threshold | Acceptable | 🟢 Clean | Normal EEG variability |
+| Variance & amplitude < threshold | Suppressed | 🟡 Low | Reduced amplitude |
+| Repeats ≥ 98% | Flatlined | 🔴 Bad | Channel dropout/disconnection |
+
+**Visualization**
+
+| EEG Flatline Detection |
+|:-----------------------:|
+| ![EEG Flatline QC](assets/eeg_flatline.png) |
+
+## 🧾 Example Output — EEG QC (Channel C4)
+
+{
+  "total_epochs": 1082,
+  "clean_epochs": 592,
+  "noisy_epochs": 416,
+  "flatline_epochs": 74,
+  "clean_ratio": 0.547,
+  "artifact_ratio": 0.453,
+  "noisy_ratio": 0.384,
+  "flatline_ratio": 0.068
+}
 
 ### 🌬️ Flow Signal Quality Examples
 
