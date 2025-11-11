@@ -228,11 +228,11 @@ Each 30-second epoch is evaluated using:
 
 #### 📈 Interpretation
 
-| Metric | Threshold | Signal Quality | Description |
-|:------:|:---------:|:--------------:|:------------|
-| Variance & amplitude > threshold | Acceptable | 🟢 Clean | Normal EEG variability |
-| Variance & amplitude < threshold | Suppressed | 🟡 Low | Reduced amplitude |
-| Repeats ≥ 98% | Flatlined | 🔴 Bad | Channel dropout/disconnection |
+|          Metric         |                 Threshold                | Signal Quality | Description                               |
+| :---------------------: | :--------------------------------------: | :------------: | :---------------------------------------- |
+| Variance & Peak-to-Peak | **≥ 20% of the 5th-percentile baseline** |    🟢 Clean    | Normal EEG variability                    |
+| Variance & Peak-to-Peak | **< 20% of the 5th-percentile baseline** |     🟡 Low     | Suppressed amplitude / possible dropout   |
+|     Repeated Samples    |   **≥ 98% identical samples in epoch**   |     🔴 Bad     | Flatline: channel dropout / disconnection |
 
 **Visualization**
 
