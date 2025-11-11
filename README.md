@@ -203,8 +203,8 @@ Empirically derived from labeled sleep EEG: contaminated epochs consistently sho
 
 | Metric | Threshold | Signal Quality | Description |
 |:------:|:---------:|:--------------:|:------------|
-| **AR ≤ 6** | Acceptable | 🟢 Clean | Minimal drift/EMG contamination |
-| **AR > 6**  | Artifactual | 🔴 Noisy | Drift and/or high-frequency EMG |
+| **AR ≤ 6** | Acceptable | Clean | Minimal drift/EMG contamination |
+| **AR > 6**  | Artifactual |  Noisy | Drift and/or high-frequency EMG |
 
 **Visualization**
 
@@ -230,9 +230,9 @@ Each 30-second epoch is evaluated using:
 
 |          Metric         |                 Threshold                | Signal Quality | Description                               |
 | :---------------------: | :--------------------------------------: | :------------: | :---------------------------------------- |
-| Variance & Peak-to-Peak | **≥ 20% of the 5th-percentile baseline** |    🟢 Clean    | Normal EEG variability                    |
-| Variance & Peak-to-Peak | **< 20% of the 5th-percentile baseline** |     🟡 Low     | Suppressed amplitude / possible dropout   |
-|     Repeated Samples    |   **≥ 98% identical samples in epoch**   |     🔴 Bad     | Flatline: channel dropout / disconnection |
+| Variance & Peak-to-Peak | **≥ 20% of the 5th-percentile baseline** |     Clean    | Normal EEG variability                    |
+| Variance & Peak-to-Peak | **< 20% of the 5th-percentile baseline** |     Low     | Suppressed amplitude / possible dropout   |
+|     Repeated Samples    |   **≥ 98% identical samples in epoch**   |     Bad     | Flatline: channel dropout / disconnection |
 
 **Visualization**
 
