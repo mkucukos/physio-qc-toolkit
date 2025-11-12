@@ -7,6 +7,7 @@ import neurokit2 as nk
 import json
 from datetime import datetime, timezone, timedelta
 
+
 # ---- helper metrics ----
 def check_clipping(signal, digital_min=-100, digital_max=100, edge_pct=0.01):
     if signal.size == 0:
@@ -14,6 +15,7 @@ def check_clipping(signal, digital_min=-100, digital_max=100, edge_pct=0.01):
     lower, upper = digital_min * (1 - edge_pct), digital_max * (1 - edge_pct)
     clipped = (signal <= lower) | (signal >= upper)
     return float(np.mean(clipped))
+
 
 def flatline_ratio(signal, eps=1e-6):
     """
@@ -36,7 +38,9 @@ def flatline_ratio(signal, eps=1e-6):
     var_thresh = np.percentile(epoch_var, 5) * 0.2
     amp_thresh = np.percentile(epoch_ptp, 5) * 0.2
 
-    flat_mask = ((epoch_var < var_thresh) & (epoch_ptp < amp_thresh)) or (repeat_ratio > 0.98)
+    flat_mask = ((epoch_var < var_thresh) & (epoch_ptp < amp_thresh)) or (
+        repeat_ratio > 0.98
+    )
 
     return float(flat_mask)
 
@@ -46,11 +50,13 @@ def missing_ratio(n_present, n_expected):
         return np.nan
     return float(max(0.0, 1.0 - n_present / n_expected))
 
+
 def bandpass_filter(sig, fs, lo=0.10, hi=1.00, order=4):
     nyq = 0.5 * fs
     lo_n, hi_n = max(lo / nyq, 1e-6), min(hi / nyq, 0.999999)
     b, a = butter(order, [lo_n, hi_n], btype="bandpass")
     return filtfilt(b, a, sig, method="gust")
+
 
 def bpm_welch(seg, fs, band=(0.10, 1.00)):
     if seg.size == 0:
@@ -62,9 +68,11 @@ def bpm_welch(seg, fs, band=(0.10, 1.00)):
         return float(dom * 60.0)
     return np.nan
 
+
 # ---- autocorrelation quality ----
-def autocorr_quality(seg, fs, max_lag_sec=10,
-                     digital_min=-100, digital_max=100, clip_thresh=0.01):
+def autocorr_quality(
+    seg, fs, max_lag_sec=10, digital_min=-100, digital_max=100, clip_thresh=0.01
+):
     """Compute normalized autocorrelation peak within lag window.
     Returns 0 for flatline or heavily clipped segments.
     """
@@ -83,8 +91,8 @@ def autocorr_quality(seg, fs, max_lag_sec=10,
 
     # --- Autocorrelation computation ---
     seg = (seg - np.nanmean(seg)) / (np.nanstd(seg) + 1e-8)
-    ac = correlate(seg, seg, mode='full')
-    ac = ac[len(ac)//2:]  # keep positive lags
+    ac = correlate(seg, seg, mode="full")
+    ac = ac[len(ac) // 2 :]  # keep positive lags
 
     if np.nanmax(np.abs(ac)) == 0:
         return np.nan
@@ -95,6 +103,7 @@ def autocorr_quality(seg, fs, max_lag_sec=10,
 
     return float(np.nanmax(ac[mask])) if np.any(mask) else np.nan
 
+
 def ratio_summary(bad_n, total):
     good_n = total - bad_n
     return {
@@ -103,6 +112,7 @@ def ratio_summary(bad_n, total):
         "good_ratio": round(good_n / total, 3) if total else None,
         "bad_ratio": round(bad_n / total, 3) if total else None,
     }
+
 
 # ---- main QC ----
 def run_flow_qc(
@@ -117,7 +127,7 @@ def run_flow_qc(
     missing_max=0.50,
     bpm_min=10.0,
     bpm_max=22.0,
-    auto_min=0.5   # 🔸 threshold for autocorrelation quality
+    auto_min=0.5,  # 🔸 threshold for autocorrelation quality
 ):
     if channel_name not in channel_dataframes:
         raise KeyError(f"Channel '{channel_name}' not found.")
@@ -134,12 +144,17 @@ def run_flow_qc(
 
     if sig.size == 0:
         empty = {
-            "total_epochs": 0, "good_epochs": 0, "bad_epochs": 0,
-            "good_ratio": None, "bad_ratio": None
+            "total_epochs": 0,
+            "good_epochs": 0,
+            "bad_epochs": 0,
+            "good_ratio": None,
+            "bad_ratio": None,
         }
         if json_path:
             with open(json_path, "w") as f:
-                json.dump({"per_epoch": [], "per_metric": {}, "overall": empty}, f, indent=2)
+                json.dump(
+                    {"per_epoch": [], "per_metric": {}, "overall": empty}, f, indent=2
+                )
         return [], {}, empty
 
     # --- prepare time base ---
@@ -191,33 +206,42 @@ def run_flow_qc(
         bad_bpm = bool(bad_bpm_low or bad_bpm_high or bad_bpm_nan)
         bad_epoch = bool(bad_clip or bad_flat or bad_miss or bad_bpm or bad_auto)
 
-        per_epoch.append({
-            "Epoch": int(i),
-            "Start_Time_ISO": (t0_dt + timedelta(seconds=float(t_sec[s]))).isoformat(),
-            "End_Time_ISO": (t0_dt + timedelta(seconds=float(t_sec[e - 1]))).isoformat(),
-            "Clipping_Ratio": float(clip) if np.isfinite(clip) else None,
-            "Flatline_Ratio": float(flat) if np.isfinite(flat) else None,
-            "Missing_Ratio": float(miss) if np.isfinite(miss) else None,
-            "BPM": float(bpm) if np.isfinite(bpm) else None,
-            "AutoCorr_Q": float(ac_score) if np.isfinite(ac_score) else None,
-            "Bad_Epoch": bad_epoch,
-            "Bad_Clip": bad_clip,
-            "Bad_Flatline": bad_flat,
-            "Bad_Missing": bad_miss,
-            "Bad_BPM": bad_bpm,
-            "Bad_AutoCorr": bad_auto,
-            "Raw_Data": seg.tolist()
-        })
+        per_epoch.append(
+            {
+                "Epoch": int(i),
+                "Start_Time_ISO": (
+                    t0_dt + timedelta(seconds=float(t_sec[s]))
+                ).isoformat(),
+                "End_Time_ISO": (
+                    t0_dt + timedelta(seconds=float(t_sec[e - 1]))
+                ).isoformat(),
+                "Clipping_Ratio": float(clip) if np.isfinite(clip) else None,
+                "Flatline_Ratio": float(flat) if np.isfinite(flat) else None,
+                "Missing_Ratio": float(miss) if np.isfinite(miss) else None,
+                "BPM": float(bpm) if np.isfinite(bpm) else None,
+                "AutoCorr_Q": float(ac_score) if np.isfinite(ac_score) else None,
+                "Bad_Epoch": bad_epoch,
+                "Bad_Clip": bad_clip,
+                "Bad_Flatline": bad_flat,
+                "Bad_Missing": bad_miss,
+                "Bad_BPM": bad_bpm,
+                "Bad_AutoCorr": bad_auto,
+                "Raw_Data": seg.tolist(),
+            }
+        )
 
     # --- summaries ---
     total = len(per_epoch)
-    def count(flag): return sum(1 for r in per_epoch if r[flag])
+
+    def count(flag):
+        return sum(1 for r in per_epoch if r[flag])
+
     per_metric_json = {
         "Clipping": ratio_summary(count("Bad_Clip"), total),
         "Flatline": ratio_summary(count("Bad_Flatline"), total),
         "Missing": ratio_summary(count("Bad_Missing"), total),
         "BPM": ratio_summary(count("Bad_BPM"), total),
-        "AutoCorr_Q": ratio_summary(count("Bad_AutoCorr"), total)
+        "AutoCorr_Q": ratio_summary(count("Bad_AutoCorr"), total),
     }
     overall_bad = count("Bad_Epoch")
     overall_json = {
@@ -232,8 +256,13 @@ def run_flow_qc(
     if json_path:
         with open(json_path, "w") as f:
             json.dump(
-                {"per_epoch": per_epoch, "per_metric": per_metric_json, "overall": overall_json},
-                f, indent=2
+                {
+                    "per_epoch": per_epoch,
+                    "per_metric": per_metric_json,
+                    "overall": overall_json,
+                },
+                f,
+                indent=2,
             )
 
     # --- plotting ---
@@ -242,8 +271,12 @@ def run_flow_qc(
 
         def shade(ax, flag_key):
             for r in per_epoch:
-                st, et = datetime.fromisoformat(r["Start_Time_ISO"]), datetime.fromisoformat(r["End_Time_ISO"])
-                ax.axvspan(st, et, color=("red" if r[flag_key] else "green"), alpha=0.18)
+                st, et = datetime.fromisoformat(
+                    r["Start_Time_ISO"]
+                ), datetime.fromisoformat(r["End_Time_ISO"])
+                ax.axvspan(
+                    st, et, color=("red" if r[flag_key] else "green"), alpha=0.18
+                )
 
         if plot in ("overall", "both"):
             fig, ax = plt.subplots(figsize=(14, 5))
@@ -252,7 +285,9 @@ def run_flow_qc(
             shade(ax, "Bad_Epoch")
             ax.set_title(f"{channel_name} — Overall Flow QC (Red=Bad, Green=Good)")
             ax.xaxis.set_major_formatter(mdates.DateFormatter("%H:%M:%S"))
-            ax.grid(True); plt.tight_layout(); plt.show()
+            ax.grid(True)
+            plt.tight_layout()
+            plt.show()
 
         if plot in ("per-metric", "both"):
             flag_map = {
@@ -260,7 +295,7 @@ def run_flow_qc(
                 "Flatline": "Bad_Flatline",
                 "Missing": "Bad_Missing",
                 "BPM": "Bad_BPM",
-                "AutoCorr_Q": "Bad_AutoCorr"
+                "AutoCorr_Q": "Bad_AutoCorr",
             }
             for metric, flag in flag_map.items():
                 fig, ax = plt.subplots(figsize=(14, 5))
@@ -269,6 +304,8 @@ def run_flow_qc(
                 shade(ax, flag)
                 ax.set_title(f"{channel_name} — {metric} QC (Red=Bad, Green=Good)")
                 ax.xaxis.set_major_formatter(mdates.DateFormatter("%H:%M:%S"))
-                ax.grid(True); plt.tight_layout(); plt.show()
+                ax.grid(True)
+                plt.tight_layout()
+                plt.show()
 
     return per_epoch, per_metric_json, overall_json

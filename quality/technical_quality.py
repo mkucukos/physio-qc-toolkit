@@ -5,16 +5,17 @@ import matplotlib.pyplot as plt
 import json
 from datetime import datetime, timezone, timedelta
 
+
 def run_clipping_qc(
     channel_name: str,
     channel_dataframes: dict,
     fs: int,
     epoch_len: int = 30,
-    rail_min: float = None,         # e.g., 0.0 for Technical
-    rail_max: float = None,         # e.g., 65535.0 for Technical
-    near_pct: float = 0.01,         # how close to the rails to count as "clipped"
-    plot: bool = False,             # optional quick plot (matplotlib)
-    json_path: str | None = None,   # optional: write a single JSON file
+    rail_min: float = None,  # e.g., 0.0 for Technical
+    rail_max: float = None,  # e.g., 65535.0 for Technical
+    near_pct: float = 0.01,  # how close to the rails to count as "clipped"
+    plot: bool = False,  # optional quick plot (matplotlib)
+    json_path: str | None = None,  # optional: write a single JSON file
 ):
     """
     Compute ONLY the clipping ratio per epoch for a given channel, JSON-friendly.
@@ -47,11 +48,32 @@ def run_clipping_qc(
 
     if sig.size == 0:
         empty_per_epoch = []
-        empty_metric = {"Clipping": {"good_epochs": 0, "bad_epochs": 0, "good_ratio": None, "bad_ratio": None}}
-        empty_overall = {"total_epochs": 0, "good_epochs": 0, "bad_epochs": 0, "good_ratio": None, "bad_ratio": None}
+        empty_metric = {
+            "Clipping": {
+                "good_epochs": 0,
+                "bad_epochs": 0,
+                "good_ratio": None,
+                "bad_ratio": None,
+            }
+        }
+        empty_overall = {
+            "total_epochs": 0,
+            "good_epochs": 0,
+            "bad_epochs": 0,
+            "good_ratio": None,
+            "bad_ratio": None,
+        }
         if json_path:
             with open(json_path, "w") as f:
-                json.dump({"per_epoch": empty_per_epoch, "per_metric": empty_metric, "overall": empty_overall}, f, indent=2)
+                json.dump(
+                    {
+                        "per_epoch": empty_per_epoch,
+                        "per_metric": empty_metric,
+                        "overall": empty_overall,
+                    },
+                    f,
+                    indent=2,
+                )
         return empty_per_epoch, empty_metric, empty_overall
 
     # --- rails (attrs → fallback to observed range) ---
@@ -66,7 +88,7 @@ def run_clipping_qc(
         rmax = float(np.nanmax(sig))
 
     # bounds within which we call it "near rails"
-    low_bound  = rmin + (rmax - rmin) * (near_pct)
+    low_bound = rmin + (rmax - rmin) * (near_pct)
     high_bound = rmax - (rmax - rmin) * (near_pct)
 
     # --- numpy time base ---
@@ -78,7 +100,7 @@ def run_clipping_qc(
     spp = int(fs * epoch_len)
     n = sig.size
     starts = np.arange(0, n, spp, dtype=int)
-    ends   = np.minimum(starts + spp, n)
+    ends = np.minimum(starts + spp, n)
 
     # --- per-epoch (NumPy only) ---
     per_epoch = []
@@ -93,13 +115,19 @@ def run_clipping_qc(
             clip = float(np.mean(clipped))
 
         bad_clip = bool(np.isfinite(clip) and (clip > 0.50))
-        per_epoch.append({
-            "Epoch": int(i),
-            "Start_Time_ISO": (t0_dt + timedelta(seconds=float(t_sec[s]))).isoformat(),
-            "End_Time_ISO":   (t0_dt + timedelta(seconds=float(t_sec[e-1]))).isoformat(),
-            "Clipping_Ratio": None if not np.isfinite(clip) else float(clip),
-            "Bad_Clip": bad_clip,
-        })
+        per_epoch.append(
+            {
+                "Epoch": int(i),
+                "Start_Time_ISO": (
+                    t0_dt + timedelta(seconds=float(t_sec[s]))
+                ).isoformat(),
+                "End_Time_ISO": (
+                    t0_dt + timedelta(seconds=float(t_sec[e - 1]))
+                ).isoformat(),
+                "Clipping_Ratio": None if not np.isfinite(clip) else float(clip),
+                "Bad_Clip": bad_clip,
+            }
+        )
 
     # --- summaries (JSON-safe) ---
     total = len(per_epoch)
@@ -141,6 +169,14 @@ def run_clipping_qc(
     # --- optional save ---
     if json_path:
         with open(json_path, "w") as f:
-            json.dump({"per_epoch": per_epoch, "per_metric": per_metric_json, "overall": overall_json}, f, indent=2)
+            json.dump(
+                {
+                    "per_epoch": per_epoch,
+                    "per_metric": per_metric_json,
+                    "overall": overall_json,
+                },
+                f,
+                indent=2,
+            )
 
     return per_epoch, per_metric_json, overall_json

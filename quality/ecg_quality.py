@@ -27,15 +27,19 @@ def get_ecg_features(ecg, time_in_sec, fs):
         Array of ECG features: [mean heart rate, maximum heart rate, minimum heart rate, heart rate variability].
     """
     try:
-        ecg = np.asarray(ecg, dtype=np.float64)  # Ensure the ECG signal is a numpy array of floats
-        b, a = butter(4, (0.25, 25), 'bandpass', fs=fs)
+        ecg = np.asarray(
+            ecg, dtype=np.float64
+        )  # Ensure the ECG signal is a numpy array of floats
+        b, a = butter(4, (0.25, 25), "bandpass", fs=fs)
         ecg_filt = filtfilt(b, a, ecg, axis=0)
         ecg_cleaned = nk.ecg_clean(ecg_filt, sampling_rate=fs)
-        instant_peaks, rpeaks = nk.ecg_peaks(ecg_cleaned, sampling_rate=fs, method="engzeemod2012")
+        instant_peaks, rpeaks = nk.ecg_peaks(
+            ecg_cleaned, sampling_rate=fs, method="engzeemod2012"
+        )
     except Exception as e:
         raise ValueError("Error processing ECG signal: " + str(e))
 
-    rr_times = time_in_sec[rpeaks['ECG_R_Peaks']]
+    rr_times = time_in_sec[rpeaks["ECG_R_Peaks"]]
     if len(rr_times) == 0:
         raise ValueError("No R-peaks detected in ECG signal.")
 
@@ -110,7 +114,7 @@ def run_ecg_qc(
         "hr_min": 25.0,
         "hr_max": 220.0,
         "snr_min": 5.0,
-        "inv_ratio_max": 0.5  # added inversion threshold
+        "inv_ratio_max": 0.5,  # added inversion threshold
     }
     if thresholds:
         th.update(thresholds)
@@ -156,10 +160,11 @@ def run_ecg_qc(
         var_thresh = np.percentile(epoch_var, 5) * 0.2
         amp_thresh = np.percentile(epoch_ptp, 5) * 0.2
 
-        flat_mask = ((epoch_var < var_thresh) & (epoch_ptp < amp_thresh)) or (repeat_ratio > 0.98)
+        flat_mask = ((epoch_var < var_thresh) & (epoch_ptp < amp_thresh)) or (
+            repeat_ratio > 0.98
+        )
 
         return float(flat_mask)
-
 
     def missing_ratio(signal, fs, epoch_length):
         expected = int(fs * epoch_length)
@@ -202,7 +207,7 @@ def run_ecg_qc(
         # ---------------- Inversion detection (NeuroKit2-only) ----------------
         try:
             # Bandpass + clean ECG
-            b, a = butter(4, (0.25, 25), 'bandpass', fs=fs)
+            b, a = butter(4, (0.25, 25), "bandpass", fs=fs)
             ecg_filt = filtfilt(b, a, epoch)
             ecg_clean = nk.ecg_clean(ecg_filt, sampling_rate=fs)
 
@@ -220,7 +225,9 @@ def run_ecg_qc(
             was_inverted = np.nan
         # ---------------------------------------------------------------------
         try:
-            hr_mean, hr_max, hr_min, hrv, snr_db = get_ecg_features(epoch, t_epoch, fs).tolist()
+            hr_mean, hr_max, hr_min, hrv, snr_db = get_ecg_features(
+                epoch, t_epoch, fs
+            ).tolist()
         except Exception:
             pass
 
@@ -228,37 +235,48 @@ def run_ecg_qc(
         bad_flat = flat > th["flatline_max"]
         bad_miss = miss > th["missing_max"]
         bad_base = (not np.isnan(base)) and (base > th["baseline_max"])
-        bad_hr = (np.isnan(hr_mean)) or (hr_mean < th["hr_min"]) or (hr_mean > th["hr_max"])
+        bad_hr = (
+            (np.isnan(hr_mean)) or (hr_mean < th["hr_min"]) or (hr_mean > th["hr_max"])
+        )
         bad_snr = (np.isnan(snr_db)) or (snr_db < th["snr_min"])
         bad_inv = (not np.isnan(inv_ratio)) and (inv_ratio > th["inv_ratio_max"])
 
-        bad_epoch = bool(bad_clip or bad_flat or bad_miss or bad_base or bad_hr or bad_snr or bad_inv)
+        bad_epoch = bool(
+            bad_clip or bad_flat or bad_miss or bad_base or bad_hr or bad_snr or bad_inv
+        )
 
-        results.append({
-            "Epoch": int(i + 1),
-            "Start_Time": str(abs_time[s]),
-            "End_Time": str(abs_time[e - 1]),
-            "Clipping_Ratio": float(clip),
-            "Flatline_Ratio": float(flat),
-            "Missing_Ratio": float(miss),
-            "Baseline_Wander_Ratio": float(base) if not np.isnan(base) else None,
-            "HR_Mean": float(hr_mean) if not np.isnan(hr_mean) else None,
-            "SNR_dB": float(snr_db) if not np.isnan(snr_db) else None,
-            "Inversion_Ratio": float(inv_ratio) if not np.isnan(inv_ratio) else None,   # new
-            "Was_Inverted": bool(was_inverted) if not np.isnan(was_inverted) else None, # new
-            "Bad_Epoch": bool(bad_epoch),
-            "Bad_Clip": bool(bad_clip),
-            "Bad_Flatline": bool(bad_flat),
-            "Bad_Missing": bool(bad_miss),
-            "Bad_Baseline": bool(bad_base),
-            "Bad_HR": bool(bad_hr),
-            "Bad_SNR": bool(bad_snr),
-            "Bad_Inversion": bool(bad_inv),  # new
-            "Raw_Data": epoch.tolist()
-        })
+        results.append(
+            {
+                "Epoch": int(i + 1),
+                "Start_Time": str(abs_time[s]),
+                "End_Time": str(abs_time[e - 1]),
+                "Clipping_Ratio": float(clip),
+                "Flatline_Ratio": float(flat),
+                "Missing_Ratio": float(miss),
+                "Baseline_Wander_Ratio": float(base) if not np.isnan(base) else None,
+                "HR_Mean": float(hr_mean) if not np.isnan(hr_mean) else None,
+                "SNR_dB": float(snr_db) if not np.isnan(snr_db) else None,
+                "Inversion_Ratio": (
+                    float(inv_ratio) if not np.isnan(inv_ratio) else None
+                ),  # new
+                "Was_Inverted": (
+                    bool(was_inverted) if not np.isnan(was_inverted) else None
+                ),  # new
+                "Bad_Epoch": bool(bad_epoch),
+                "Bad_Clip": bool(bad_clip),
+                "Bad_Flatline": bool(bad_flat),
+                "Bad_Missing": bool(bad_miss),
+                "Bad_Baseline": bool(bad_base),
+                "Bad_HR": bool(bad_hr),
+                "Bad_SNR": bool(bad_snr),
+                "Bad_Inversion": bool(bad_inv),  # new
+                "Raw_Data": epoch.tolist(),
+            }
+        )
 
     # --- per-metric summaries ---
     total = len(results)
+
     def ratio_summary(flag):
         bad_n = sum(r[flag] for r in results)
         good_n = total - bad_n
@@ -298,7 +316,9 @@ def run_ecg_qc(
     if plot in ("overall", "both"):
         fig, ax = plt.subplots(figsize=(14, 5))
         ax.plot(abs_time, signal, lw=0.8, color="black")
-        ax.set_title(f"{channel_name} — Overall QC (Red=Bad, Green=Good, incl. Inversion)")
+        ax.set_title(
+            f"{channel_name} — Overall QC (Red=Bad, Green=Good, incl. Inversion)"
+        )
         ax.xaxis.set_major_formatter(mdates.DateFormatter("%H:%M:%S"))
         ax.grid(True)
         _shade(ax, "Bad_Epoch")
