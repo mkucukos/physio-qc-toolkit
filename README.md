@@ -4,7 +4,7 @@ A lightweight **Python toolkit** for **physiological signal quality control (QC)
 
 ---
 
-##  Requirements
+##  Environment Setup
 
 - **Python 3.11**
 - Install dependencies via:
@@ -15,7 +15,7 @@ A lightweight **Python toolkit** for **physiological signal quality control (QC)
 
 This toolkit provides an **end-to-end pipeline** to:
 1. **Read EDF files** and extract channel data into structured DataFrames  
-2. **Run signal quality checks** (QC) on ECG, respiratory, and other biosignals  
+2. **Run signal quality checks** (QC) on ECG, EEG, respiratory, and other biosignals  
 3. **Compute per-epoch metrics** such as clipping, flatline ratio, missing data, baseline drift, HR, and SNR  
 4. **Visualize quality flags** with color-coded (red/green) spans  
 5. **Generate JSON summaries** for automated downstream analyses
@@ -26,13 +26,17 @@ This toolkit provides an **end-to-end pipeline** to:
 
 ```bash
 physio-qc-toolkit/
-├── quality/                 # QC pipelines and visualization functions
-├── read/                    # EDF file reading utilities
-├── edf_signal_quality.ipynb # Main Jupyter notebook (run + visualize QC)
+├── assets/                  # Static figures used in README/docs
+├── data/                    # Small sample data to re-run examples
+├── docs/                    # Documentation (usage, design notes)
+├── quality/                 # QC pipelines, metrics, and visualization
+├── utils/                   # I/O & helpers (EDF readers, filters, utils)
+├── edf_signal_quality.ipynb # Main notebook to run + visualize QC
 ├── LICENSE
 ├── README.md
 └── __init__.py
 ```
+
 ## **Features**
 
 - **EDF Reader:** Handles EDF headers, sampling rates, labels, and transducers  
@@ -64,13 +68,16 @@ physio-qc-toolkit/
 
 ##  Example Usage
 
+```python
 from read.read_edf import read_edf_to_dataframes
 from quality.run_qc import run_ecg_qc
+```
 
-# Step 1: Read EDF file
+### Step 1: Read EDF file
 channel_dataframes = read_edf_to_dataframes("ABC100110013333PSG06.edf")
 
-# Step 2: Run QC on ECG II
+### Step 2: Run QC on ECG II
+```python
 qc_df, per_metric_json, overall_json = run_ecg_qc(
     "ECG II",
     channel_dataframes=channel_dataframes,
@@ -88,12 +95,13 @@ qc_df, per_metric_json, overall_json = run_ecg_qc(
     json_path="qc_summary.json",
     plot="per-metric"
 )
+```
 
-# Step 3: Print summary
+### Step 3: Print summary
 print(overall_json)
 
- Output Example
-
+Output Example
+```
 === Overall QC Summary ===
 {'total_epochs': 180, 'good_epochs': 157, 'bad_epochs': 23, 'good_ratio': 0.872, 'bad_ratio': 0.128}
 
@@ -106,9 +114,9 @@ print(overall_json)
   "HR_Mean": {"good_ratio": 0.90, "bad_ratio": 0.10},
   "SNR_dB": {"good_ratio": 0.95, "bad_ratio": 0.05}
 }
+```
 
-
-##  Visualization
+## ECG Visualization
 
 Each 30-second epoch is shaded according to QC results:
 - 🟢 **Green** → passes all quality checks  
@@ -121,11 +129,11 @@ Each 30-second epoch is shaded according to QC results:
 | ![Clipping Ratio QC](assets/clipping.png) | ![Baseline Wander QC](assets/baseline.png) | ![SNR QC](assets/SNR.png) |
 
 
-### 🔉 Signal-to-Noise Ratio (SNR) Calculation
+## 🔉 Signal-to-Noise Ratio (SNR) Calculation
 
 The **SNR metric** quantifies the ratio of meaningful ECG activity to background noise, providing an estimate of overall ECG signal integrity.
 
-#### ⚙️ How It Works
+### ⚙️ How It Works
 
 During feature extraction, short **±0.1 s windows** centered around each detected **R-peak** are isolated.  
 For each heartbeat:
@@ -143,7 +151,7 @@ where:
 
 ---
 
-#### 📈 Interpretation
+### 📈 Interpretation
 
 | SNR Range | Signal Quality | Description |
 |:-----------:|:---------------:|:-------------|
@@ -152,12 +160,12 @@ where:
 
 A higher SNR indicates that cardiac activity dominates noise sources such as motion artifacts, electrode detachment, or baseline wander.
 
-### ⚡ ECG Inversion Detection
+## ⚡ ECG Inversion Detection
 
 The **Inversion QC metric** identifies ECG epochs with **reversed polarity**, often caused by **electrode misplacement** or **inverted leads**.  
 It quantifies polarity reversal by comparing each cleaned ECG segment with its absolute version.
 
-#### **Formula**
+### **Formula**
 
 `inv_ratio = (1 - corr(ECG, |ECG|)) / 2`  
 where:  
@@ -167,7 +175,7 @@ where:
 
 ---
 
-#### 📈 Interpretation
+### 📈 Interpretation
 
 | inv_ratio Range | Signal Quality | Description |
 |:----------------:|:---------------:|:-------------|
@@ -178,7 +186,7 @@ A higher inversion ratio indicates stronger waveform reversal, typically due to 
 
 ---
 
-#### 🩺 Visualization
+#### 🩺 Inversion Visualization
 
 | Inversion Detection |
 |:-------------------:|
@@ -199,19 +207,19 @@ where **SP** is the mean spectral power within each band.
 **Rationale**  
 Empirically derived from labeled sleep EEG: contaminated epochs consistently showed **elevated 0.1–2 Hz** (drift) and **40–50 Hz** (EMG) relative to **2–5 Hz** mid-band activity. Thresholds are **sleep-calibrated**; awake periods with strong alpha or muscle activity may be flagged more often.
 
-#### 📈 Interpretation
+### 📈 Interpretation
 
 | Metric | Threshold | Signal Quality | Description |
 |:------:|:---------:|:--------------:|:------------|
 | **AR ≤ 6** | Acceptable | Clean | Minimal drift/EMG contamination |
 | **AR > 6**  | Artifactual |  Noisy | Drift and/or high-frequency EMG |
 
-**Visualization**
+## EEG Visualization
 
 | EEG Artifact Detection |
 |:-----------------------:|
 | ![EEG Artifact QC](assets/eeg_artifact.png) |
-repeats).
+repeats.
 
 
 ## ⚡ EEG Flatline Detection QC
@@ -226,7 +234,7 @@ Each 30-second epoch is evaluated using:
 - **Suppressed signal:** variance and peak-to-peak **below 20% of the 5th percentile** of all epochs → potential dropout  
 - **Complete flatline:** `≥ 98%` identical samples → **Flatlined**
 
-#### 📈 Interpretation
+### 📈 Interpretation
 
 |          Metric         |                 Threshold                | Signal Quality | Description                               |
 | :---------------------: | :--------------------------------------: | :------------: | :---------------------------------------- |
@@ -242,6 +250,7 @@ Each 30-second epoch is evaluated using:
 
 ## 🧾 Example Output — EEG QC (Channel C4)
 
+```
 {
   "total_epochs": 1082,
   "clean_epochs": 592,
@@ -252,6 +261,7 @@ Each 30-second epoch is evaluated using:
   "noisy_ratio": 0.384,
   "flatline_ratio": 0.068
 }
+```
 
 ### 🌬️ Flow Signal Quality Examples
 
