@@ -66,7 +66,7 @@ physio-qc-toolkit/
   - Ratio of good / bad epochs per metric and per-signal summary  
 ---
 
-##  Example Usage
+##  Example Usage - ECG QC 
 
 ```python
 from read.read_edf import read_edf_to_dataframes
@@ -74,7 +74,9 @@ from quality.run_qc import run_ecg_qc
 ```
 
 ### Step 1: Read EDF file
+```python
 channel_dataframes = read_edf_to_dataframes("ABC100110013333PSG06.edf")
+```
 
 ### Step 2: Run QC on ECG II
 ```python
@@ -186,13 +188,55 @@ A higher inversion ratio indicates stronger waveform reversal, typically due to 
 
 ---
 
-#### 🩺 Inversion Visualization
+### 🩺 Inversion Visualization
 
 | Inversion Detection |
 |:-------------------:|
 | ![Inversion QC](assets/inversion.png) |  
 
 ---
+
+##  Example Usage - EEG QC 
+
+
+```python
+from read.read_edf import read_edf_to_dataframes
+from quality.run_qc import calculate_quality
+```
+
+### Step 1: Read EDF file
+```python
+channel_dataframes = read_edf_to_dataframes("ABC100110013333PSG06.edf")
+```
+
+### Step 2: Run QC on EEG 
+```python
+from quality.eeg_qc import calculate_quality  
+
+qc_results = calculate_quality(
+    signal=eeg_data,
+    sampling_rate=fs,
+    channel_names=['EEG F3-A2','EEG F4-A1','EEG C3-A2','EEG C4-A1','EEG O1-A2','EEG O2-A1'],
+    epoch_len=30,
+    ar_thresh=6,      # artifact ratio threshold
+    plot=True         # show per-epoch shading and spectra
+)
+```
+
+### Step 3: Print summary
+
+```
+{
+  "total_epochs": 1082,
+  "clean_epochs": 592,
+  "noisy_epochs": 416,
+  "flatline_epochs": 74,
+  "clean_ratio": 0.547,
+  "artifact_ratio": 0.453,
+  "noisy_ratio": 0.384,
+  "flatline_ratio": 0.068
+}
+```
 
 ## 🧠 EEG Artifact Detection QC
 
@@ -221,7 +265,6 @@ Empirically derived from labeled sleep EEG: contaminated epochs consistently sho
 | ![EEG Artifact QC](assets/eeg_artifact.png) |
 repeats.
 
-
 ## ⚡ EEG Flatline Detection QC
 
 Flags epochs with **abnormally low amplitude** or **loss of variability**, typically due to **electrode disconnection**, **high impedance**, or **amplifier saturation**.  
@@ -247,21 +290,6 @@ Each 30-second epoch is evaluated using:
 | EEG Flatline Detection |
 |:-----------------------:|
 | ![EEG Flatline QC](assets/eeg_flatline.png) |
-
-## 🧾 Example Output — EEG QC (Channel C4)
-
-```
-{
-  "total_epochs": 1082,
-  "clean_epochs": 592,
-  "noisy_epochs": 416,
-  "flatline_epochs": 74,
-  "clean_ratio": 0.547,
-  "artifact_ratio": 0.453,
-  "noisy_ratio": 0.384,
-  "flatline_ratio": 0.068
-}
-```
 
 ### 🌬️ Flow Signal Quality Examples
 
