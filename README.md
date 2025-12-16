@@ -311,7 +311,7 @@ The leg signal quality metrics assess whether leg-mounted sensors provide usable
 
 LEG QC is evaluated in 30-second epochs (configurable) and is time-aligned with raw signal plots using absolute timestamps, ensuring direct interpretability alongside PSG annotations.
 
-| ![Leg Clipping QC](assets/leg_clipping.png) | ![Leg Flatline QC](assets/leg_flatline.png) 
+![Leg Clipping QC](assets/leg_clipping.png) | ![Leg Flatline QC](assets/leg_flatline.png) 
 
 License
 This project is licensed under the MIT License — see the LICENSE
