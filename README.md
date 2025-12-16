@@ -305,5 +305,13 @@ A high autocorrelation peak (close to 1.0) indicates stable, rhythmic breathing 
 A low autocorrelation value (near 0.0) suggests irregular or noisy respiration, such as disrupted airflow, clipping, or flatline segments.
 The method automatically penalizes heavily clipped or nearly constant (flatline) signals by assigning them a score of 0.
 
+### 🦵 Leg Signal Quality Examples
+
+The leg signal quality metrics assess whether leg-mounted sensors provide usable movement information over time.
+
+LEG QC is evaluated in 30-second epochs (configurable) and is time-aligned with raw signal plots using absolute timestamps, ensuring direct interpretability alongside PSG annotations.
+
+| ![Leg Clipping QC](assets/leg_clipping.png) | ![Leg Flatline QC](assets/leg_flatline.png) 
+
 License
 This project is licensed under the MIT License — see the LICENSE
