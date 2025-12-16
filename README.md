@@ -291,7 +291,7 @@ Each 30-second epoch is evaluated using:
 |:-----------------------:|
 | ![EEG Flatline QC](assets/eeg_flatline.png) |
 
-### 🌬️ Flow Signal Quality Examples
+## 🌬️ Flow Signal Quality Examples
 
 | Clipping Ratio | BPM (Respiration Rate) | Autocorrelation QC |
 |:---------------:|:----------------------:|:------------------:|
@@ -305,7 +305,7 @@ A high autocorrelation peak (close to 1.0) indicates stable, rhythmic breathing 
 A low autocorrelation value (near 0.0) suggests irregular or noisy respiration, such as disrupted airflow, clipping, or flatline segments.
 The method automatically penalizes heavily clipped or nearly constant (flatline) signals by assigning them a score of 0.
 
-### 🦵 Leg Signal Quality Examples
+## 🦵 Leg Signal Quality Examples
 
 The leg signal quality metrics assess whether leg-mounted sensors provide usable movement information over time.
 
