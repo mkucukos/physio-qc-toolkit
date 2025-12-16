@@ -293,6 +293,10 @@ Each 30-second epoch is evaluated using:
 
 ## 🌬️ Flow Signal Quality Examples
 
+Automatically identifies respiratory flow epochs contaminated by sensor clipping, signal dropout, missing data, implausible respiration rates, or irregular breathing patterns.
+
+Each 30-second epoch is evaluated independently using time-domain, frequency-domain, and periodicity-based metrics designed for thermistors, pressure belts, and airflow sensors commonly used in PSG and wearable systems.
+
 | Clipping Ratio | BPM (Respiration Rate) | Autocorrelation QC |
 |:---------------:|:----------------------:|:------------------:|
 | ![Flow Clipping QC](assets/flow_clipping.png) | ![Flow BPM QC](assets/flow_bpm.png) | ![Autocorrelation QC](assets/autocorrelation.png) |
@@ -305,13 +309,37 @@ A high autocorrelation peak (close to 1.0) indicates stable, rhythmic breathing 
 A low autocorrelation value (near 0.0) suggests irregular or noisy respiration, such as disrupted airflow, clipping, or flatline segments.
 The method automatically penalizes heavily clipped or nearly constant (flatline) signals by assigning them a score of 0.
 
+### Print summary
+```
+{
+  "total_epochs": 1083,
+  "good_epochs": 572,
+  "bad_epochs": 511,
+  "good_ratio": 0.528,
+  "bad_ratio": 0.472
+}
+```
+
 ## 🦵 Leg Signal Quality Examples
 
 The leg signal quality metrics assess whether leg-mounted sensors provide usable movement information over time.
 
 LEG QC is evaluated in 30-second epochs (configurable) and is time-aligned with raw signal plots using absolute timestamps, ensuring direct interpretability alongside PSG annotations.
 
-![Leg Clipping QC](assets/leg_clipping.png) | ![Leg Flatline QC](assets/leg_flatline.png) 
+| Clipping Ratio | Flatline Detection |
+|:---------------:|:------------------:|
+| ![Leg Clipping QC](assets/leg_clipping.png) | ![Leg Flatline QC](assets/leg_flatline.png) |
+
+### Print summary
+```
+{
+  "total_epochs": 1083,
+  "good_epochs": 919,
+  "bad_epochs": 164,
+  "good_ratio": 0.849,
+  "bad_ratio": 0.151
+}
+```
 
 License
 This project is licensed under the MIT License — see the LICENSE
