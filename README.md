@@ -164,12 +164,22 @@ A higher SNR indicates that cardiac activity dominates noise sources such as mot
 
 ## ⚡ ECG Inversion Detection
 
-The **Inversion QC metric** identifies ECG epochs with **reversed polarity**, often caused by **electrode misplacement** or **inverted leads**.  
-It quantifies polarity reversal by comparing each cleaned ECG segment with its absolute version.
+The **Inversion QC metric** identifies ECG epochs with **reversed polarity**, most commonly caused by **electrode misplacement** or **lead inversion**.
+
+Inversion detection is performed using **NeuroKit2’s morphology-based algorithm**, which evaluates the orientation of the **P–QRS–T complex** after ECG filtering and cleaning.  
+This approach is robust to baseline drift and noise and does **not** rely on simple amplitude sign or correlation.
 
 ### **Formula**
 
-`inv_ratio = (1 - corr(ECG, |ECG|)) / 2`  
+For each **30-second epoch**:
+
+1. The ECG signal is **band-pass filtered** (0.25–25 Hz)  
+2. The signal is **cleaned** using `neurokit2.ecg_clean`  
+3. ECG polarity is evaluated using:
+
+```python
+_, was_inverted = nk.ecg_invert(ecg_clean, sampling_rate=fs)
+```
 where:  
 
 - **inv_ratio < 0.5** → upright ECG (normal polarity)  
