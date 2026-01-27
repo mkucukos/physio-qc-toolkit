@@ -251,7 +251,7 @@ qc_results = calculate_quality(
 ## 🧠 EEG Artifact Detection QC
 
 Automatically identifies epochs contaminated by **low-frequency drift**, **movement**, or **high-frequency EMG** noise.  
-Each 30-second epoch is transformed via **FFT**, spectral amplitudes are **normalized by the mean power in 1–40 Hz**, and then **log-transformed (base 10)** prior to evaluation.
+**Sweat-related** noise arises from electrode–skin impedance changes and typically manifests as broadband high-frequency activity and intermittent amplitude instability. Each 30-second epoch is transformed via **FFT**, spectral amplitudes are **normalized by the mean power in 1–40 Hz**, and then **log-transformed (base 10)** prior to evaluation.
 
 **Triple-Ratio Metric (Formula)**  
 `AR = (SP_0.1–2Hz / SP_2–5Hz) × (1 / SP_40–50Hz)`  
