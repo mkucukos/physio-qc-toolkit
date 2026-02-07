@@ -89,19 +89,24 @@ def calculate_quality(signal, sampling_rate, channel_names=None,
     art_mask = noise_mask | flat_mask  # unified mask for all detected artifacts
 
     # --- Optional Z-score normalization and visualization ---
+
+    # --- Visualization output (always computed) ---
+    # Compute z-score using only valid (non-flatline) epochs
+    valid_mask = ~flat_mask
+    valid_flat = logpow[valid_mask]
+    mean = np.nanmean(valid_flat, axis=0, keepdims=True)
+    std = np.nanstd(valid_flat, axis=0, keepdims=True)
+    logpow_z = (logpow - mean) / (std + 1e-8)
+    logpow_z[flat_mask] = -5  # mark flat epochs visually
+
+    # Apply light Gaussian smoothing for visualization
+    # logpow_z: (ch, epoch, freq) -> slice plotted freqs -> (ch, epoch, f_plot)
+    smooth = gaussian_filter(logpow_z, sigma=(0, 1, 1))[:, :, plot_mask]
+    # Reorder to (ch, freq, epoch) as requested
+    visual_output = np.transpose(smooth, (0, 2, 1))
+
+    # --- Optional plotting of computed visual_output ---
     if plot:
-        # Compute z-score using only valid (non-flatline) epochs
-        valid_mask = ~flat_mask
-        valid_flat = logpow[valid_mask]
-        mean = np.nanmean(valid_flat, axis=0, keepdims=True)
-        std = np.nanstd(valid_flat, axis=0, keepdims=True)
-        logpow_z = (logpow - mean) / (std + 1e-8)
-        logpow_z[flat_mask] = -5  # mark flat epochs visually
-
-        # Apply light Gaussian smoothing for visualization
-        smooth = gaussian_filter(logpow_z, sigma=(0, 1, 1))[:, :, plot_mask]
-        smooth = np.transpose(smooth, (0, 2, 1))  # reorder to (ch, freq, epoch)
-
         # --- Plotting setup ---
         fig, axes = plt.subplots(n_ch, 1, figsize=(18, 1.5 * n_ch), sharex=True)
         if n_ch == 1:
@@ -109,25 +114,33 @@ def calculate_quality(signal, sampling_rate, channel_names=None,
 
         # Define time tick positions (every 30 minutes)
         tick_interval_sec = 30 * 60
-        tick_interval_epochs = tick_interval_sec // epoch_len
+        tick_interval_epochs = max(1, int(tick_interval_sec // epoch_len))
         tick_positions = np.arange(0, n_epochs, tick_interval_epochs)
         tick_labels = [time.strftime('%H:%M', time.gmtime(t * epoch_len)) for t in tick_positions]
 
         # --- Channel plots ---
+        # visual_output[ci] is (freq, epoch); imshow expects (rows=freq, cols=epoch)
         for ci, ch in enumerate(channel_names or [f"ch{ci}" for ci in range(n_ch)]):
             ax = axes[ci]
-            S, n_freqs = smooth[ci], smooth.shape[1]
-            # Plot log-power spectrogram
+            S = visual_output[ci]
+            n_freqs = S.shape[0]
+
+            # Plot z-scored, smoothed spectrogram
             ax.imshow(S, aspect="auto", origin="lower", cmap="jet", vmin=-1, vmax=1,
                       extent=[0, n_epochs, 0, n_freqs])
+
             # Highlight detected artifacts
             for e in np.where(art_mask[ci])[0]:
                 ax.axvspan(e, e + 1, color='magenta', alpha=0.45, lw=0)
+
             ax.set_ylabel(ch, fontsize=12)
             ax.set_ylim(0, n_freqs)
-            freq_ticks = np.linspace(0, n_freqs-1, 4)
+
+            # Map y-ticks to ~Hz labels for the plotted range (0..30 Hz)
+            freq_ticks = np.linspace(0, n_freqs - 1, 4)
             ax.set_yticks(freq_ticks)
             ax.set_yticklabels(['0', '10', '20', '30'], fontsize=11)
+
             if ci == n_ch - 1:
                 ax.set_xticks(tick_positions)
                 ax.set_xticklabels(tick_labels, fontsize=10)
@@ -139,7 +152,7 @@ def calculate_quality(signal, sampling_rate, channel_names=None,
         plt.tight_layout(rect=[0.02, 0, 1, 1])
         plt.show()
 
-    # --- Return structured results ---
+    # --- Return structured results --
     ch_names = channel_names or [f"ch{i}" for i in range(n_ch)]
     return {
         "metric_names": ["noise_score"],
@@ -147,9 +160,12 @@ def calculate_quality(signal, sampling_rate, channel_names=None,
         "flatline_mask": flat_mask,  # boolean mask per epoch
         "noise_mask": noise_mask,    # boolean mask per epoch
         "combined_flags": art_mask,  # union of noise + flatline
+        "visual_output": visual_output,  # (ch, freq, epoch) z-scored+smoothed log-power for visualization
         "metadata": {
             "fs": fs,
             "epoch_len": epoch_len,
-            "channels": ch_names
+            "channels": ch_names,
+            "visual_freqs_hz": freqs[plot_mask],
+            "visual_epoch_times_s": (np.arange(n_epochs) * epoch_len).astype(float)
         }
     }
