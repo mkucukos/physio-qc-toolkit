@@ -216,7 +216,7 @@ def calculate_emg_quality(signal, sampling_rate, channel_names=None,
 
         fig, axes = plt.subplots(
             n_ch, 1,
-            figsize=(18, 1.5 * n_ch),
+            figsize=(20, 2 * n_ch),
             sharex=True
         )
 

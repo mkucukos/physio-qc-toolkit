@@ -4,7 +4,7 @@ from scipy.fft import rfft, rfftfreq
 from scipy.ndimage import gaussian_filter
 import time
 
-def calculate_quality(signal, sampling_rate, channel_names=None,
+def calculate_eeg_quality(signal, sampling_rate, channel_names=None,
                       epoch_len=30, ar_thresh=6, plot=False, **kwargs):
     """
     EEG artifact and flatline quality check.

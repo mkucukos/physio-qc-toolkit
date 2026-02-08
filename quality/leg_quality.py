@@ -8,13 +8,30 @@ import json
 # Helper metrics (unchanged)
 # ----------------------------------------------------
 
-def check_clipping_leg(signal, pmin, pmax, edge_pct=0.1):
-    if signal.size == 0:
+def check_clipping_leg(signal):
+    """
+    Detect LEG sensor saturation using adaptive plateau detection.
+    Works without assuming fixed pmin/pmax scaling.
+    Returns fraction of samples stuck near min/max rails.
+    """
+    signal = np.asarray(signal, dtype=float)
+    if signal.size < 10:
         return np.nan
-    lower = pmin + edge_pct * (pmax - pmin)
-    upper = pmax - edge_pct * (pmax - pmin)
-    clipped = (signal <= lower) | (signal >= upper)
-    return float(np.mean(clipped))
+
+    s_min = np.nanmin(signal)
+    s_max = np.nanmax(signal)
+    s_rng = s_max - s_min
+
+    if s_rng <= 1e-12:
+        return 1.0  # completely flat / dead sensor
+
+    # Samples within 0.1% of dynamic range = "railing"
+    eps = s_rng * 0.001
+
+    near_min = np.mean(signal <= (s_min + eps))
+    near_max = np.mean(signal >= (s_max - eps))
+
+    return float(max(near_min, near_max))
 
 
 def flatline_ratio_leg(signal, eps=1e-6):
@@ -49,31 +66,22 @@ def ratio_summary(bad_n, total):
 # LEG QC (time-aligned with raw plotting)
 # ----------------------------------------------------
 
-def run_leg_qc(
+def calculate_leg_quality(
     channel_name,
     channel_dataframes,
     fs,
-    pmin,
-    pmax,
     epoch_len=30,
-    json_path=None,
-    plot="per-metric",
     clipping_max=0.50,
     flatline_max=0.50,
     missing_max=0.50,
+    plot="overall",
 ):
-    """
-    LEG QC using df['Absolute Time'] directly (no timezone logic).
-    Flow-style outputs:
-      per_epoch, per_metric_json, overall_json
-    """
-
     if channel_name not in channel_dataframes:
         raise KeyError(f"Channel '{channel_name}' not found.")
 
     df = channel_dataframes[channel_name]
 
-    # --- extract time + signal exactly like your plotting ---
+    # --- Time & signal ---
     time = pd.to_datetime(df["Absolute Time"], errors="coerce")
     sig = pd.to_numeric(df[channel_name], errors="coerce").to_numpy(dtype=float)
 
@@ -81,130 +89,86 @@ def run_leg_qc(
     sig = sig[mask]
     time = time.loc[mask].reset_index(drop=True)
 
-
     if sig.size == 0:
-        empty = {
-            "total_epochs": 0,
-            "good_epochs": 0,
-            "bad_epochs": 0,
-            "good_ratio": None,
-            "bad_ratio": None,
+        return {
+            "metric_names": ["clipping", "flatline", "missing"],
+            "metric_values": {},
+            "bad_masks": {},
+            "combined_mask": np.array([]),
+            "metadata": {"fs": fs, "epoch_len": epoch_len, "channel": channel_name},
         }
-        return [], {}, empty
 
     spp = int(fs * epoch_len)
     starts = np.arange(0, len(sig), spp)
     ends = np.minimum(starts + spp, len(sig))
+    n_epochs = len(starts)
 
-    per_epoch = []
+    # ---------------- Metric Arrays ----------------
+    clipping_vals = np.zeros(n_epochs)
+    flat_vals = np.zeros(n_epochs)
+    missing_vals = np.zeros(n_epochs)
+    epoch_start_times = []
 
-    # ------------------------------------------------
-    # Epoch loop
-    # ------------------------------------------------
-    for i, (s, e) in enumerate(zip(starts, ends), start=1):
+    # ---------------- Epoch Loop ----------------
+    for i, (s, e) in enumerate(zip(starts, ends)):
         seg = sig[s:e]
+        epoch_start_times.append(time.iloc[s])
 
-        clip = check_clipping_leg(seg, pmin, pmax)
-        flat = flatline_ratio_leg(seg)
-        miss = missing_ratio(len(seg), spp)
+        clipping_vals[i] = check_clipping_leg(seg)
+        flat_vals[i] = flatline_ratio_leg(seg)
+        missing_vals[i] = missing_ratio(len(seg), spp)
 
-        bad_clip = bool(np.isfinite(clip) and clip > clipping_max)
-        bad_flat = bool(np.isfinite(flat) and flat > flatline_max)
-        bad_miss = bool(np.isfinite(miss) and miss > missing_max)
+    epoch_start_times = np.array(epoch_start_times)
 
-        bad_epoch = bad_clip or bad_flat or bad_miss
-
-        per_epoch.append(
-            {
-                "Epoch": i,
-                "Start_Time": time.iloc[s],
-                "End_Time": time.iloc[e - 1],
-                "Clipping_Ratio": clip,
-                "Flatline_Ratio": flat,
-                "Missing_Ratio": miss,
-                "Bad_Epoch": bad_epoch,
-                "Bad_Clip": bad_clip,
-                "Bad_Flatline": bad_flat,
-                "Bad_Missing": bad_miss,
-                "Raw_Data": seg.tolist(),
-            }
-        )
-
-    # ------------------------------------------------
-    # Summaries
-    # ------------------------------------------------
-    total = len(per_epoch)
-
-    def count(flag):
-        return sum(r[flag] for r in per_epoch)
-
-    per_metric_json = {
-        "Clipping": ratio_summary(count("Bad_Clip"), total),
-        "Flatline": ratio_summary(count("Bad_Flatline"), total),
-        "Missing": ratio_summary(count("Bad_Missing"), total),
+    # ---------------- Boolean Masks ----------------
+    masks = {
+        "clipping": clipping_vals > clipping_max,
+        "flatline": flat_vals > flatline_max,
+        "missing": missing_vals > missing_max,
     }
 
-    overall_bad = count("Bad_Epoch")
-    overall_json = {
-        "total_epochs": total,
-        "good_epochs": total - overall_bad,
-        "bad_epochs": overall_bad,
-        "good_ratio": round((total - overall_bad) / total, 3) if total else None,
-        "bad_ratio": round(overall_bad / total, 3) if total else None,
-    }
+    combined_mask = np.any(np.column_stack(list(masks.values())), axis=1)
 
-    # ------------------------------------------------
-    # Plotting (same style as your raw plots)
-    # ------------------------------------------------
-    if plot in ("overall", "per-metric", "both"):
+    # ---------------- Plotting ----------------
+    def shade_epochs(ax, mask_array):
+        for i, bad in enumerate(mask_array):
+            start = epoch_start_times[i]
+            end = start + pd.Timedelta(seconds=epoch_len)
+            ax.axvspan(start, end, color=("red" if bad else "green"), alpha=0.18)
 
-        def shade(ax, flag):
-            for r in per_epoch:
-                ax.axvspan(
-                    r["Start_Time"],
-                    r["End_Time"],
-                    color=("red" if r[flag] else "green"),
-                    alpha=0.18,
-                )
+    if plot in ("overall", "both"):
+        fig, ax = plt.subplots(figsize=(14, 5))
+        ax.plot(time, sig, lw=0.8, color="black")
+        shade_epochs(ax, combined_mask)
+        ax.set_title(f"{channel_name} — Overall LEG QC")
+        ax.xaxis.set_major_formatter(mdates.DateFormatter("%H:%M:%S"))
+        ax.grid(True)
+        plt.tight_layout()
+        plt.show()
 
-        step = 1
-
-        if plot in ("overall", "both"):
-            fig, ax = plt.subplots(figsize=(14, 5))
-            ax.plot(time.iloc[::step], sig[::step], lw=0.8, color="black")
-            shade(ax, "Bad_Epoch")
-            ax.set_title(f"{channel_name} — Overall LEG QC")
+    if plot in ("per-metric", "both"):
+        for name, mask in masks.items():
+            fig, ax = plt.subplots(figsize=(14, 4))
+            ax.plot(time, sig, lw=0.8, color="black")
+            shade_epochs(ax, mask)
+            ax.set_title(f"{channel_name} — {name.upper()} QC")
             ax.xaxis.set_major_formatter(mdates.DateFormatter("%H:%M:%S"))
             ax.grid(True)
             plt.tight_layout()
             plt.show()
 
-        if plot in ("per-metric", "both"):
-            for metric, flag in {
-                "Clipping": "Bad_Clip",
-                "Flatline": "Bad_Flatline",
-                "Missing": "Bad_Missing",
-            }.items():
-                fig, ax = plt.subplots(figsize=(14, 5))
-                ax.plot(time.iloc[::step], sig[::step], lw=0.8, color="black")
-                shade(ax, flag)
-                ax.set_title(f"{channel_name} — {metric} QC")
-                ax.xaxis.set_major_formatter(mdates.DateFormatter("%H:%M:%S"))
-                ax.grid(True)
-                plt.tight_layout()
-                plt.show()
-
-    # --- optional JSON save ---
-    if json_path:
-        with open(json_path, "w") as f:
-            json.dump(
-                {
-                    "per_epoch": per_epoch,
-                    "per_metric": per_metric_json,
-                    "overall": overall_json,
-                },
-                f,
-                indent=2,
-            )
-
-    return per_epoch, per_metric_json, overall_json
+    return {
+        "metric_names": ["clipping", "flatline", "missing"],
+        "metric_values": {
+            "clipping": clipping_vals,
+            "flatline": flat_vals,
+            "missing": missing_vals,
+        },
+        "bad_masks": masks,
+        "combined_mask": combined_mask,
+        "metadata": {
+            "fs": fs,
+            "epoch_len": epoch_len,
+            "channel": channel_name,
+        },
+    }
