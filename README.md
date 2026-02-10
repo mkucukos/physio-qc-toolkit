@@ -340,9 +340,10 @@ The leg signal quality metrics assess whether leg-mounted sensors provide usable
 
 LEG QC is evaluated in 30-second epochs (configurable) and is time-aligned with raw signal plots using absolute timestamps, ensuring direct interpretability alongside PSG annotations.
 
-| Clipping Ratio | Flatline Detection |
-|:---------------:|:------------------:|
-| ![Leg Clipping QC](assets/leg_clipping.png) | ![Leg Flatline QC](assets/leg_flatline.png) |
+| Leg Signal Quality Metric |
+|:--:|
+| **Clipping Ratio**<br>![Leg Clipping QC](assets/leg_clipping.png) |
+| **Flatline Detection**<br>![Leg Flatline QC](assets/leg_flatline.png) |
 
 ### Print summary
 ```
