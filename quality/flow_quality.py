@@ -114,15 +114,123 @@ def autocorr_quality(seg, fs, max_lag_sec=10, digital_min=-100, digital_max=100,
 
 
 # ---------- main: ECG-style output ----------
+
+# ---------- helpers ----------
+def clipping_ratio(sig):
+    """
+    Detect ECG saturation (clipping) using plateau detection.
+    Works without assuming fixed ADC limits.
+    Returns fraction of samples near min/max rails.
+    """
+    sig = np.asarray(sig, dtype=float)
+    if sig.size < 10:
+        return np.nan
+
+    s_min = np.nanmin(sig)
+    s_max = np.nanmax(sig)
+    s_rng = s_max - s_min
+
+    if s_rng <= 1e-12:
+        return 1.0  # completely flat / dead channel
+
+    # samples "near rail" = within 0.1% of epoch range
+    eps = s_rng * 0.001
+
+    near_min = np.mean(sig <= (s_min + eps))
+    near_max = np.mean(sig >= (s_max - eps))
+
+    return float(max(near_min, near_max))
+
+
+def flatline_ratio(signal, eps=1e-6):
+    """
+    Returns 1.0 if flatline-like, else 0.0
+    (mask-based QC expects a scalar per epoch)
+    """
+    sig = np.asarray(signal, dtype=float)
+    if sig.size < 2:
+        return 1.0
+
+    epoch_var = np.var(sig)
+    epoch_ptp = np.ptp(sig)
+
+    diffs = np.diff(sig)
+    repeat_ratio = np.mean(np.abs(diffs) < eps)
+
+    # absolute-ish thresholds (not percentile on scalar)
+    if (epoch_var < 1e-12) or (epoch_ptp < 1e-6) or (repeat_ratio > 0.98):
+        return 1.0
+    return 0.0
+
+
+def missing_ratio(n_present, n_expected):
+    if n_expected <= 0:
+        return np.nan
+    return float(max(0.0, 1.0 - n_present / n_expected))
+
+
+def bandpass_filter(sig, fs, lo=0.10, hi=1.00, order=4):
+    nyq = 0.5 * fs
+    lo_n = max(lo / nyq, 1e-6)
+    hi_n = min(hi / nyq, 0.999999)
+    b, a = butter(order, [lo_n, hi_n], btype="bandpass")
+    return filtfilt(b, a, sig, method="gust")
+
+
+def bpm_welch(seg, fs, band=(0.10, 1.00)):
+    if seg.size == 0:
+        return np.nan
+    f, pxx = welch(seg, fs=fs, nperseg=min(len(seg), 2048))
+    m = (f >= band[0]) & (f <= band[1])
+    if np.any(m):
+        p = np.nansum(pxx[m])
+        if np.isfinite(p) and p > 1e-12:
+            dom = f[m][np.nanargmax(pxx[m])]
+            return float(dom * 60.0)
+    return np.nan
+
+
+def autocorr_quality(seg, fs, max_lag_sec=10, digital_min=-100, digital_max=100, clip_thresh=0.01):
+    """
+    Normalized autocorrelation peak within lag window.
+    Returns 0.0 for flatline or heavily clipped segments.
+    """
+    seg = np.asarray(seg, dtype=float)
+    if seg.size < fs:
+        return np.nan
+
+    if np.nanstd(seg) < 1e-6:
+        return 0.0
+
+    lower = digital_min * (1 - clip_thresh)
+    upper = digital_max * (1 - clip_thresh)
+    clipped = (seg <= lower) | (seg >= upper)
+    if np.mean(clipped) >= clip_thresh:
+        return 0.0
+
+    segz = (seg - np.nanmean(seg)) / (np.nanstd(seg) + 1e-8)
+    ac = correlate(segz, segz, mode="full")
+    ac = ac[len(ac) // 2:]  # positive lags
+
+    mx = np.nanmax(np.abs(ac))
+    if not np.isfinite(mx) or mx <= 1e-12:
+        return np.nan
+
+    ac = ac / mx
+    lags = np.arange(len(ac)) / fs
+    m = (lags >= 1.0) & (lags <= max_lag_sec)
+    return float(np.nanmax(ac[m])) if np.any(m) else np.nan
+
+
 def calculate_flow_quality(
     channel_name,
     channel_dataframes,
     fs=100,
     epoch_len=30,
     thresholds=None,
-    plot="per-metric",
+    plot=False,
 ):
-
+    # ---------------- Thresholds ----------------
     th = {
         "clipping_max": 0.50,
         "flatline_max": 0.50,
@@ -130,38 +238,48 @@ def calculate_flow_quality(
         "bpm_min": 10.0,
         "bpm_max": 22.0,
         "auto_min": 0.50,
-        "clip_edge_frac": 0.001,   # 👈 adaptive plateau threshold
     }
     if thresholds:
         th.update(thresholds)
 
-    if channel_name not in channel_dataframes:
-        raise KeyError(f"Channel '{channel_name}' not found in channel_dataframes.")
-
     df = channel_dataframes[channel_name]
 
-    t_abs = pd.to_datetime(df["Absolute Time"], errors="coerce")
-    if getattr(t_abs.dt, "tz", None) is None:
-        t_abs = t_abs.dt.tz_localize("UTC")
+    # ============================================================
+    # TIME + SIGNAL INGEST (SAFE)
+    # ============================================================
 
-    t_abs_ns = t_abs.astype("int64", copy=False).to_numpy()
-    sig_np = pd.to_numeric(df[channel_name], errors="coerce").to_numpy(dtype=float)
+    t_abs = pd.to_datetime(df["Absolute Time"], errors="coerce", utc=True)
+    t_abs = t_abs.dt.tz_convert(None).to_numpy(dtype="datetime64[ns]")
 
-    mask = np.isfinite(sig_np) & np.isfinite(t_abs_ns)
-    sig = sig_np[mask].astype(np.float32)
-    t_abs_ns = t_abs_ns[mask]
+    sig = pd.to_numeric(df[channel_name], errors="coerce").to_numpy(dtype=float)
+
+    mask = np.isfinite(sig) & np.isfinite(t_abs.astype("int64"))
+    sig = sig[mask]
+    t_abs = t_abs[mask]
 
     if sig.size == 0:
-        return {
-            "metric_names": ["clipping", "flatline", "missing", "bpm", "autocorr_q"],
-            "metric_values": {k: np.array([]) for k in ["clipping","flatline","missing","bpm","autocorr_q"]},
-            "bad_masks": {k: np.array([], dtype=bool) for k in ["clipping","flatline","missing","bpm","autocorr_q"]},
-            "combined_mask": np.array([], dtype=bool),
-            "metadata": {"fs": fs, "epoch_len": epoch_len, "channel": channel_name},
-        }
+        return None
+
+    # ============================================================
+    # SETUP
+    # ============================================================
 
     spp = int(fs * epoch_len)
     n_epochs = int(np.ceil(len(sig) / spp))
+
+    sig = sig.astype(np.float32)
+    sig_demean = sig - np.nanmedian(sig)
+
+    try:
+        sig_filt = bandpass_filter(sig_demean, fs)
+    except Exception:
+        sig_filt = sig_demean
+
+    epoch_start_times = t_abs[::spp][:n_epochs]
+
+    # ============================================================
+    # STORAGE
+    # ============================================================
 
     clip_vals = np.full(n_epochs, np.nan)
     flat_vals = np.full(n_epochs, np.nan)
@@ -169,90 +287,137 @@ def calculate_flow_quality(
     bpm_vals  = np.full(n_epochs, np.nan)
     ac_vals   = np.full(n_epochs, np.nan)
 
-    t0_ns = t_abs_ns[0]
-    t_sec = (t_abs_ns - t0_ns) / 1e9
-    t0_dt = datetime.fromtimestamp(t0_ns / 1e9, tz=timezone.utc)
+    bpm_skipped = np.zeros(n_epochs, dtype=bool)
+    ac_skipped  = np.zeros(n_epochs, dtype=bool)
 
-    epoch_start_times = np.empty(n_epochs, dtype="datetime64[ns]")
+    clip_max = th["clipping_max"]
+    flat_max = th["flatline_max"]
+    miss_max = th["missing_max"]
+    bpm_min  = th["bpm_min"]
+    bpm_max  = th["bpm_max"]
+    auto_min = th["auto_min"]
+
+    # ============================================================
+    # EPOCH LOOP
+    # ============================================================
 
     for i in range(n_epochs):
-        s, e = i * spp, min((i + 1) * spp, len(sig))
+        s = i * spp
+        e = min(s + spp, sig.size)
+
         seg = sig[s:e]
-        epoch_start_times[i] = np.datetime64(int(t_abs_ns[s]), "ns")
+        seg_f = sig_filt[s:e]
 
-        # ✅ Adaptive clipping
-        clip_vals[i] = clipping_ratio(seg)
-        flat_vals[i] = flatline_ratio(seg)
-        miss_vals[i] = missing_ratio(seg.size, spp)
+        c = clipping_ratio(seg)
+        f = flatline_ratio(seg)
+        m = missing_ratio(seg.size, spp)
 
-        try:
-            seg_filt = bandpass_filter(seg - np.nanmedian(seg), fs)
-        except:
-            seg_filt = seg
+        clip_vals[i] = c
+        flat_vals[i] = f
+        miss_vals[i] = m
 
+        # ---------- HARD GATE ----------
+        if (f > flat_max) or (m > miss_max) or (c > clip_max):
+            bpm_skipped[i] = True
+            ac_skipped[i] = True
+            continue
+
+        # ---------- BPM ----------
         bpm = np.nan
         try:
-            rr = nk.rsp_rate(seg_filt, sampling_rate=fs, method="fft")
-            if rr is not None and np.size(rr):
+            rr = nk.rsp_rate(seg_f, sampling_rate=fs, method="fft")
+            if rr is not None and rr.size:
                 bpm = float(np.nanmedian(rr))
-            if not np.isfinite(bpm):
-                rr2 = nk.rsp_rate(seg_filt, sampling_rate=fs, method="count")
-                if rr2 is not None and np.size(rr2):
-                    bpm = float(np.nanmedian(rr2))
-        except:
+        except Exception:
             pass
+
         if not np.isfinite(bpm):
-            bpm = bpm_welch(seg_filt, fs)
+            bpm = bpm_welch(seg_f, fs)
 
         bpm_vals[i] = bpm
 
-        # ✅ Autocorr no longer depends on digital rails
-        ac_vals[i] = autocorr_quality(seg_filt, fs=fs)
+        # ---------- AUTOCORR ----------
+        if (f > flat_max) or (m > miss_max) or (c > clip_max):
+            ac_skipped[i] = True
+        else:
+            ac_vals[i] = autocorr_quality(seg_f, fs=fs)
+
+    # ============================================================
+    # MASKS
+    # ============================================================
 
     masks = {
-        "clipping": clip_vals > th["clipping_max"],
-        "flatline": flat_vals > th["flatline_max"],
-        "missing": miss_vals > th["missing_max"],
-        "bpm": (~np.isfinite(bpm_vals)) | (bpm_vals < th["bpm_min"]) | (bpm_vals > th["bpm_max"]),
-        "autocorr_q": np.isfinite(ac_vals) & (ac_vals < th["auto_min"]),
+        "clipping": clip_vals > clip_max,
+        "flatline": flat_vals > flat_max,
+        "missing": miss_vals > miss_max,
+        "bpm": (~bpm_skipped) & (
+            (~np.isfinite(bpm_vals)) |
+            (bpm_vals < bpm_min) |
+            (bpm_vals > bpm_max)
+        ),
+        "autocorr_q": (~ac_skipped) & np.isfinite(ac_vals) & (ac_vals < auto_min),
     }
 
     combined_mask = np.any(np.column_stack(list(masks.values())), axis=1)
 
-    # ---------- Plotting ----------
-    if plot in ("overall", "per-metric", "both"):
-        times = [t0_dt + timedelta(seconds=float(s)) for s in t_sec]
-        step = max(1, len(sig) // 20000)
+    # ============================================================
+    # PLOTTING (WITH WHITE FOR SKIPPED)
+    # ============================================================
 
-        def shade(ax, bad_mask):
-            for i, bad in enumerate(bad_mask):
-                st = epoch_start_times[i].astype("datetime64[ms]").astype(object)
-                et = (epoch_start_times[i] + np.timedelta64(int(epoch_len), "s")).astype("datetime64[ms]").astype(object)
-                ax.axvspan(st, et, color=("red" if bad else "green"), alpha=0.18)
+    if plot:
+        step = max(1, sig.size // 20000)
 
-        if plot in ("overall", "both"):
-            fig, ax = plt.subplots(figsize=(14, 5))
-            ax.plot(times[::step], sig[::step], lw=0.8, color="black")
-            shade(ax, combined_mask)
-            ax.set_title(f"{channel_name} — Overall Flow QC (Green=Good, Red=Bad)")
-            ax.xaxis.set_major_formatter(mdates.DateFormatter("%H:%M:%S"))
-            ax.grid(True)
-            plt.tight_layout()
-            plt.show()
+        def shade(ax, bad_mask, skip_mask=None):
+            for i in range(n_epochs):
+                st = epoch_start_times[i]
+                et = st + np.timedelta64(epoch_len, "s")
 
-        if plot in ("per-metric", "both"):
-            for name, mask in masks.items():
-                fig, ax = plt.subplots(figsize=(14, 5))
-                ax.plot(times[::step], sig[::step], lw=0.8, color="black")
-                shade(ax, mask)
-                ax.set_title(f"{channel_name} — {name.upper()} QC")
-                ax.xaxis.set_major_formatter(mdates.DateFormatter("%H:%M:%S"))
-                ax.grid(True)
-                plt.tight_layout()
-                plt.show()
+                if skip_mask is not None and skip_mask[i]:
+                    color = "white"
+                else:
+                    color = "red" if bad_mask[i] else "green"
+
+                ax.axvspan(st, et, color=color, alpha=0.25, linewidth=0)
+
+        fig, axes = plt.subplots(
+            len(masks) + 1,
+            1,
+            figsize=(16, 1.5 * (len(masks) + 1)),
+            sharex=True
+        )
+
+        axes[0].plot(t_abs[::step], sig[::step], lw=0.8, color="black")
+        shade(axes[0], combined_mask)
+        axes[0].set_title(f"{channel_name} — Overall Flow QC")
+
+        for ax, name in zip(axes[1:], masks):
+            ax.plot(t_abs[::step], sig[::step], lw=0.8, color="black")
+
+            if name == "bpm":
+                shade(ax, masks[name], bpm_skipped)
+            elif name == "autocorr_q":
+                shade(ax, masks[name], ac_skipped)
+            else:
+                shade(ax, masks[name])
+
+            ax.set_title(name.upper())
+
+
+        xmin = t_abs[0]
+        xmax = t_abs[-1]
+
+        for ax in axes:
+            ax.set_xlim(xmin, xmax)
+        axes[-1].xaxis.set_major_formatter(mdates.DateFormatter("%H:%M:%S"))
+        plt.tight_layout()
+        plt.show()
+
+    # ============================================================
+    # RETURN
+    # ============================================================
 
     return {
-        "metric_names": ["clipping", "flatline", "missing", "bpm", "autocorr_q"],
+        "metric_names": list(masks.keys()),
         "metric_values": {
             "clipping": clip_vals,
             "flatline": flat_vals,
@@ -262,5 +427,9 @@ def calculate_flow_quality(
         },
         "bad_masks": masks,
         "combined_mask": combined_mask,
-        "metadata": {"fs": fs, "epoch_len": epoch_len, "channel": channel_name},
+        "metadata": {
+            "fs": fs,
+            "epoch_len": epoch_len,
+            "channel": channel_name,
+        },
     }

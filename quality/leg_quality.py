@@ -62,9 +62,6 @@ def ratio_summary(bad_n, total):
         "bad_ratio": round(bad_n / total, 3) if total else None,
     }
 
-# ----------------------------------------------------
-# LEG QC (time-aligned with raw plotting)
-# ----------------------------------------------------
 
 def calculate_leg_quality(
     channel_name,
@@ -74,53 +71,79 @@ def calculate_leg_quality(
     clipping_max=0.50,
     flatline_max=0.50,
     missing_max=0.50,
-    plot="overall",
+    plot=False,
 ):
     if channel_name not in channel_dataframes:
         raise KeyError(f"Channel '{channel_name}' not found.")
 
     df = channel_dataframes[channel_name]
 
-    # --- Time & signal ---
-    time = pd.to_datetime(df["Absolute Time"], errors="coerce")
+    # ============================================================
+    # TIME + SIGNAL INGEST (NUMPY-SAFE)
+    # ============================================================
+
+    time = pd.to_datetime(df["Absolute Time"], errors="coerce", utc=True)
+    time = time.dt.tz_convert(None).to_numpy(dtype="datetime64[ns]")
+
     sig = pd.to_numeric(df[channel_name], errors="coerce").to_numpy(dtype=float)
 
-    mask = np.isfinite(sig) & time.notna()
+    mask = np.isfinite(sig) & np.isfinite(time.astype("int64"))
     sig = sig[mask]
-    time = time.loc[mask].reset_index(drop=True)
+    time = time[mask]
 
     if sig.size == 0:
         return {
             "metric_names": ["clipping", "flatline", "missing"],
-            "metric_values": {},
-            "bad_masks": {},
-            "combined_mask": np.array([]),
+            "metric_values": {
+                "clipping": np.array([]),
+                "flatline": np.array([]),
+                "missing": np.array([]),
+            },
+            "bad_masks": {
+                "clipping": np.array([], dtype=bool),
+                "flatline": np.array([], dtype=bool),
+                "missing": np.array([], dtype=bool),
+            },
+            "combined_mask": np.array([], dtype=bool),
             "metadata": {"fs": fs, "epoch_len": epoch_len, "channel": channel_name},
         }
 
+    # ============================================================
+    # SETUP
+    # ============================================================
+
     spp = int(fs * epoch_len)
-    starts = np.arange(0, len(sig), spp)
-    ends = np.minimum(starts + spp, len(sig))
-    n_epochs = len(starts)
+    n_epochs = int(np.ceil(len(sig) / spp))
 
-    # ---------------- Metric Arrays ----------------
-    clipping_vals = np.zeros(n_epochs)
-    flat_vals = np.zeros(n_epochs)
-    missing_vals = np.zeros(n_epochs)
-    epoch_start_times = []
+    clipping_vals = np.full(n_epochs, np.nan)
+    flat_vals = np.full(n_epochs, np.nan)
+    missing_vals = np.full(n_epochs, np.nan)
+    epoch_start_times = np.empty(n_epochs, dtype="datetime64[ns]")
 
-    # ---------------- Epoch Loop ----------------
-    for i, (s, e) in enumerate(zip(starts, ends)):
+    # Local refs (micro-optimization)
+    clip_fn = check_clipping_leg
+    flat_fn = flatline_ratio_leg
+    miss_fn = missing_ratio
+
+    # ============================================================
+    # EPOCH LOOP (LOGIC UNCHANGED)
+    # ============================================================
+
+    for i in range(n_epochs):
+        s = i * spp
+        e = min(s + spp, sig.size)
+
         seg = sig[s:e]
-        epoch_start_times.append(time.iloc[s])
 
-        clipping_vals[i] = check_clipping_leg(seg)
-        flat_vals[i] = flatline_ratio_leg(seg)
-        missing_vals[i] = missing_ratio(len(seg), spp)
+        epoch_start_times[i] = time[s]
+        clipping_vals[i] = clip_fn(seg)
+        flat_vals[i] = flat_fn(seg)
+        missing_vals[i] = miss_fn(seg.size, spp)
 
-    epoch_start_times = np.array(epoch_start_times)
+    # ============================================================
+    # MASKS
+    # ============================================================
 
-    # ---------------- Boolean Masks ----------------
     masks = {
         "clipping": clipping_vals > clipping_max,
         "flatline": flat_vals > flatline_max,
@@ -129,33 +152,51 @@ def calculate_leg_quality(
 
     combined_mask = np.any(np.column_stack(list(masks.values())), axis=1)
 
-    # ---------------- Plotting ----------------
-    def shade_epochs(ax, mask_array):
-        for i, bad in enumerate(mask_array):
-            start = epoch_start_times[i]
-            end = start + pd.Timedelta(seconds=epoch_len)
-            ax.axvspan(start, end, color=("red" if bad else "green"), alpha=0.18)
+    # ============================================================
+    # PLOTTING (UNCHANGED)
+    # ============================================================
 
-    if plot in ("overall", "both"):
-        fig, ax = plt.subplots(figsize=(14, 5))
-        ax.plot(time, sig, lw=0.8, color="black")
-        shade_epochs(ax, combined_mask)
-        ax.set_title(f"{channel_name} — Overall LEG QC")
-        ax.xaxis.set_major_formatter(mdates.DateFormatter("%H:%M:%S"))
-        ax.grid(True)
+    if plot:
+        def shade_epochs(ax, mask_array):
+            for i, bad in enumerate(mask_array):
+                st = epoch_start_times[i]
+                et = st + np.timedelta64(epoch_len, "s")
+                ax.axvspan(st, et, color=("red" if bad else "green"), alpha=0.18)
+
+        metric_names = list(masks.keys())
+        n_rows = 1 + len(metric_names)
+
+        fig, axes = plt.subplots(
+            n_rows,
+            1,
+            figsize=(16, 1.5 * n_rows),
+            sharex=True
+        )
+
+        axes[0].plot(time, sig, lw=0.8, color="black")
+        shade_epochs(axes[0], combined_mask)
+        axes[0].set_title(f"{channel_name} — Overall LEG QC")
+        axes[0].grid(True)
+
+        for i, name in enumerate(metric_names, start=1):
+            axes[i].plot(time, sig, lw=0.8, color="black")
+            shade_epochs(axes[i], masks[name])
+            axes[i].set_title(name.upper())
+            axes[i].grid(True)
+
+        xmin = time[0]
+        xmax = time[-1]
+
+        for ax in axes:
+            ax.set_xlim(xmin, xmax)
+        axes[-1].xaxis.set_major_formatter(mdates.DateFormatter("%H:%M:%S"))
+        fig.autofmt_xdate()
         plt.tight_layout()
         plt.show()
 
-    if plot in ("per-metric", "both"):
-        for name, mask in masks.items():
-            fig, ax = plt.subplots(figsize=(14, 4))
-            ax.plot(time, sig, lw=0.8, color="black")
-            shade_epochs(ax, mask)
-            ax.set_title(f"{channel_name} — {name.upper()} QC")
-            ax.xaxis.set_major_formatter(mdates.DateFormatter("%H:%M:%S"))
-            ax.grid(True)
-            plt.tight_layout()
-            plt.show()
+    # ============================================================
+    # RETURN
+    # ============================================================
 
     return {
         "metric_names": ["clipping", "flatline", "missing"],
