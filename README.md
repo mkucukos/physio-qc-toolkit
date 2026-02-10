@@ -47,9 +47,8 @@ physio-qc-toolkit/
     - **Clipping Ratio** (`>50%` = bad)  
     - **Flatline Ratio** (`>50%` = bad)  
     - **Missing Ratio** (`>50%` = bad)  
-    - **Baseline Wander** (`>15%` power < 0.3 Hz = bad)  
-    - **Heart Rate Range** (`25–220 bpm`)  
-    - **SNR** (`<6 dB` = bad)  
+    - **Baseline Wander** (`>30%` power < 0.3 Hz = bad)  
+    - **SNR** (`<5 dB` = bad)  
   - **EEG Signals**
     - **Artifact Ratio (AR):** `> 6` → **Artifactual**
     - **Flatline Ratio:** `≥ 98%` identical samples → **Bad**
@@ -80,41 +79,23 @@ channel_dataframes = read_edf_to_dataframes("ABC100110013333PSG06.edf")
 
 ### Step 2: Run QC on ECG II
 ```python
-qc_df, per_metric_json, overall_json = run_ecg_qc(
-    "ECG II",
+qc_output = calculate_ecg_quality(
+    channel_name=ecg_label,
     channel_dataframes=channel_dataframes,
-    fs=200,
+    fs=fs_ecg,
     epoch_len=30,
-    thresholds={
-        "clipping_max": 0.50,
-        "flatline_max": 0.50,
-        "missing_max":  0.50,
-        "baseline_max": 0.15,
-        "hr_min": 30.0,
-        "hr_max": 120.0,
-        "snr_min": 6.0,
-    },
-    json_path="qc_summary.json",
-    plot="per-metric"
+    plot=True 
 )
 ```
 
 ### Step 3: Print summary
-print(overall_json)
-
-Output Example
-```
-=== Overall QC Summary ===
-{'total_epochs': 180, 'good_epochs': 157, 'bad_epochs': 23, 'good_ratio': 0.872, 'bad_ratio': 0.128}
-
-===  Per-metric === 
-{
-  "Clipping": {"good_ratio": 0.98, "bad_ratio": 0.02},
-  "Flatline": {"good_ratio": 1.00, "bad_ratio": 0.00},
-  "Missing": {"good_ratio": 0.97, "bad_ratio": 0.03},
-  "Baseline": {"good_ratio": 0.85, "bad_ratio": 0.15},
-  "HR_Mean": {"good_ratio": 0.90, "bad_ratio": 0.10},
-  "SNR_dB": {"good_ratio": 0.95, "bad_ratio": 0.05}
+Overall Bad Epochs :  26.78%
+  • Clipping           :   7.20%
+  • Flatline           :   6.83%
+  • Missing            :   0.09%
+  • Baseline Wander    :   8.40%
+  • Low SNR            :   5.63%
+  • Signal Inversion   :  14.13%
 }
 ```
 
