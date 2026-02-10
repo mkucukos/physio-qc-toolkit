@@ -86,8 +86,8 @@ qc_output = calculate_ecg_quality(
     epoch_len=30,
     plot=True 
 )
-```
 
+```
 ### Step 3: Print summary
 Overall Bad Epochs :  26.78%
   • Clipping           :   7.20%
@@ -96,7 +96,6 @@ Overall Bad Epochs :  26.78%
   • Baseline Wander    :   8.40%
   • Low SNR            :   5.63%
   • Signal Inversion   :  14.13%
-}
 ```
 
 ## ECG Visualization
