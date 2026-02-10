@@ -126,9 +126,11 @@ Each 30-second epoch is shaded according to QC results:
 
 ### 🫀 ECG Signal Quality Examples
 
-| Clipping Ratio | Baseline Wander | SNR (Signal-to-Noise Ratio) |
-|:---------------:|:----------------:|:---------------------------:|
-| ![Clipping Ratio QC](assets/clipping.png) | ![Baseline Wander QC](assets/baseline.png) | ![SNR QC](assets/SNR.png) |
+| ECG Signal Quality Metric |
+|:--:|
+| **Clipping Ratio**<br>![Clipping Ratio QC](assets/clipping.png) |
+| **Baseline Wander**<br>![Baseline Wander QC](assets/baseline.png) |
+| **SNR (Signal-to-Noise Ratio)**<br>![SNR QC](assets/SNR.png) |
 
 
 ## 🔉 Signal-to-Noise Ratio (SNR) Calculation
