@@ -120,7 +120,7 @@ def calculate_eog_quality(signal, sampling_rate, channel_names=None,
     X = X.reshape(2, n_epochs, epoch_samps)
 
     # -------------------------------
-    # FFT 
+    # FFT + visualization frequency range
     # EOG is mostly < ~15 Hz physiologically, but plotting to 30 Hz helps see contamination.
     # -------------------------------
     freqs = rfftfreq(epoch_samps, 1 / fs)
@@ -128,6 +128,12 @@ def calculate_eog_quality(signal, sampling_rate, channel_names=None,
     # EOG band for optional spectral checks (not required for staging; kept as a sanity metric)
     eog_band = (freqs >= 0.3) & (freqs <= 15.0)
     hf_band = (freqs > 15.0) & (freqs <= min(30.0, fs / 2.0))
+
+    # -------------------------------
+    # FFT / log-power (used for visualization output only)
+    # -------------------------------
+    F = np.abs(rfft(X, axis=2))  # (2, epoch, freq)
+
 
     # -------------------------------
     # Time-domain integrity metrics (per channel, per epoch)
