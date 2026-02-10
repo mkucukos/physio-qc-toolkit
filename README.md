@@ -307,9 +307,11 @@ Automatically identifies respiratory flow epochs contaminated by sensor clipping
 
 Each 30-second epoch is evaluated independently using time-domain, frequency-domain, and periodicity-based metrics designed for thermistors, pressure belts, and airflow sensors commonly used in PSG and wearable systems.
 
-| Clipping Ratio | BPM (Respiration Rate) | Autocorrelation QC |
-|:---------------:|:----------------------:|:------------------:|
-| ![Flow Clipping QC](assets/flow_clipping.png) | ![Flow BPM QC](assets/flow_bpm.png) | ![Autocorrelation QC](assets/autocorrelation.png) |
+| QC Metric |
+|:--:|
+| **Clipping Ratio**<br>![Flow Clipping QC](assets/flow_clipping.png) |
+| **BPM (Respiration Rate)**<br>![Flow BPM QC](assets/flow_bpm.png) |
+| **Autocorrelation QC**<br>![Autocorrelation QC](assets/autocorrelation.png) |
 
 ### Autocorrelation Quality (Respiratory Regularity)
 
