@@ -17,12 +17,61 @@ EOG quality assessment for sleep EDFs.
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.fft import rfft, rfftfreq
-from scipy.ndimage import gaussian_filter
+from scipy.signal import butter, filtfilt, iirnotch
 import time
 
 
+def _butter_bandpass(low_hz, high_hz, fs, order=4):
+    nyq = 0.5 * fs
+    low = max(low_hz / nyq, 1e-6)
+    high = min(high_hz / nyq, 0.999999)
+    if low >= high:
+        raise ValueError(f"Invalid bandpass: low={low_hz}Hz high={high_hz}Hz for fs={fs}")
+    b, a = butter(order, [low, high], btype="band")
+    return b, a
+
+
+def _apply_notch(x, fs, notch_hz=60.0, q=30.0):
+    w0 = notch_hz / (fs / 2.0)
+    if w0 <= 0 or w0 >= 1:
+        return x
+    b, a = iirnotch(w0=w0, Q=q)
+    return filtfilt(b, a, x).astype(np.float32, copy=False)
+
+
+def _eog_preprocess_for_view(x, fs,
+                            bandpass=(0.3, 15.0),
+                            notch_hz=None,
+                            notch_q=30.0,
+                            demean=True):
+    """Typical PSG-style EOG visualization preprocessing.
+
+    - Demean (removes DC)
+    - Bandpass (default 0.3–15 Hz): emphasizes ocular deflections, removes drift and HF noise.
+      (Some labs display up to 30–35 Hz; adjust bandpass if desired.)
+    - Optional notch at 60 Hz (usually unnecessary if lowpass <= 15 Hz, but kept for flexibility).
+    """
+    y = x.astype(np.float32, copy=False)
+
+    if demean:
+        y = y - np.nanmean(y)
+
+    b, a = _butter_bandpass(bandpass[0], bandpass[1], fs, order=4)
+    y = filtfilt(b, a, np.nan_to_num(y)).astype(np.float32, copy=False)
+
+    if notch_hz is not None:
+        y = _apply_notch(y, fs, notch_hz=float(notch_hz), q=float(notch_q))
+
+    return y
+
+
 def calculate_eog_quality(signal, sampling_rate, channel_names=None,
-                          epoch_len=30, plot=False):
+                          epoch_len=30, plot=False,
+                          # --- visualization / replay buffer controls ---
+                          view_bandpass=(0.3, 15.0),
+                          view_notch_hz=None,
+                          plot_decimate_to_hz=200.0,
+                          plot_seconds_per_screen=None):
     """
     Parameters
     ----------
@@ -40,7 +89,7 @@ def calculate_eog_quality(signal, sampling_rate, channel_names=None,
     Returns
     -------
     dict
-        Contains masks, metrics, visual_output (2 x freq x epoch), and metadata.
+        Contains masks, metrics, visual_output (2 x samples), and metadata.
     """
 
     # -------------------------------
@@ -71,21 +120,14 @@ def calculate_eog_quality(signal, sampling_rate, channel_names=None,
     X = X.reshape(2, n_epochs, epoch_samps)
 
     # -------------------------------
-    # FFT + visualization frequency range
+    # FFT 
     # EOG is mostly < ~15 Hz physiologically, but plotting to 30 Hz helps see contamination.
     # -------------------------------
     freqs = rfftfreq(epoch_samps, 1 / fs)
-    plot_mask = freqs <= 30.0
 
     # EOG band for optional spectral checks (not required for staging; kept as a sanity metric)
     eog_band = (freqs >= 0.3) & (freqs <= 15.0)
     hf_band = (freqs > 15.0) & (freqs <= min(30.0, fs / 2.0))
-
-    # -------------------------------
-    # FFT / log-power (used for visualization output only)
-    # -------------------------------
-    F = np.abs(rfft(X, axis=2))  # (2, epoch, freq)
-    logpow = np.log10(F + 1e-12)
 
     # -------------------------------
     # Time-domain integrity metrics (per channel, per epoch)
@@ -169,66 +211,89 @@ def calculate_eog_quality(signal, sampling_rate, channel_names=None,
     bad_mask = flat_mask | saturation_mask | pop_mask | hf_mask
 
     # -------------------------------
-    # Visualization output (always computed): z-scored log power, smoothed
+    # Visualization output (always computed): PSG-style preprocessed EOG traces
+    # visual_output shape: (2, n_samples_trunc)
     # -------------------------------
-    valid_mask = ~bad_mask
-    valid_vals = logpow[valid_mask]
+    n_samples_trunc = n_epochs * epoch_samps
+    X_cont = signal[:, :n_samples_trunc].astype(np.float32, copy=False)
 
-    mean = np.nanmean(valid_vals, axis=0, keepdims=True)
-    std = np.nanstd(valid_vals, axis=0, keepdims=True)
+    visual_output = np.zeros((2, n_samples_trunc), dtype=np.float32)
+    for ci in range(2):
+        visual_output[ci, :] = _eog_preprocess_for_view(
+            X_cont[ci],
+            fs=fs,
+            bandpass=view_bandpass,
+            notch_hz=view_notch_hz,
+            notch_q=30.0,
+            demean=True
+        )
 
-    logpow_z = (logpow - mean) / (std + 1e-8)
+    # Hard checks so it cannot silently collapse/flatten inside this function
+    assert visual_output.ndim == 2, visual_output.shape
+    assert visual_output.shape == (2, n_samples_trunc), visual_output.shape
 
-    # Push flagged epochs down so they are visually obvious
-    logpow_z[bad_mask] = -5
-
-    smooth = gaussian_filter(logpow_z, sigma=(0, 1, 1))[:, :, plot_mask]
-    visual_output = np.transpose(smooth, (0, 2, 1))  # (2, freq, epoch)
+    visual_time_s = (np.arange(n_samples_trunc, dtype=np.float32) / fs)
 
     # -------------------------------
     # Optional plotting:
-    # - Two spectrogram rows (one per EOG channel)
-    # - One correlation row (epoch-level diagnostic)
-    # -------------------------------
+
     if plot:
 
+        # Two time-domain trace panels (one per EOG channel) + correlation diagnostic
         fig, axes = plt.subplots(3, 1, figsize=(18, 6), sharex=True)
 
-        # X-axis ticks every 30 minutes
+        # Optional decimation for speed (visual only)
+        if plot_decimate_to_hz is not None and plot_decimate_to_hz > 0 and fs > plot_decimate_to_hz:
+            decim = int(np.floor(fs / plot_decimate_to_hz))
+        else:
+            decim = 1
+
+        t_plot = visual_time_s[::decim]
+
+        if plot_seconds_per_screen is not None:
+            keep = t_plot <= float(plot_seconds_per_screen)
+        else:
+            keep = slice(None)
+
+        # X-axis ticks every 30 minutes (labels HH:MM from start of record)
         tick_interval_epochs = max(1, int((30 * 60) // epoch_len))
-        tick_positions = np.arange(0, n_epochs, tick_interval_epochs)
-        tick_labels = [time.strftime('%H:%M', time.gmtime(t * epoch_len)) for t in tick_positions]
+        tick_positions_epochs = np.arange(0, n_epochs, tick_interval_epochs)
+        tick_positions_s = tick_positions_epochs * epoch_len
+        tick_labels = [time.strftime('%H:%M', time.gmtime(tsec)) for tsec in tick_positions_s]
 
-        # Y-axis frequency ticks (true Hz values from FFT)
-        visual_freqs_hz = freqs[plot_mask]
-        max_hz = visual_freqs_hz[-1]
-        desired_ticks_hz = np.array([0, 5, 10, 15, 20, 25, 30])
-        desired_ticks_hz = desired_ticks_hz[desired_ticks_hz <= max_hz]
-        freq_tick_inds = [np.argmin(np.abs(visual_freqs_hz - hz)) for hz in desired_ticks_hz]
-
-        # --- Panel 1 + 2: spectrograms ---
+        # --- Panel 1 + 2: time-domain EOG traces ---
         for ci in range(2):
             ax = axes[ci]
-            S = visual_output[ci]
-            ax.imshow(S, aspect="auto", origin="lower", cmap="jet", vmin=-2, vmax=2)
-
-            # Overlay bad epochs for that channel
-            for e in np.where(bad_mask[ci])[0]:
-                ax.axvspan(e, e + 1, color="magenta", alpha=0.45, lw=0)
-
+            y_plot = visual_output[ci, ::decim][keep]
+            tp = t_plot[keep]
+            ax.plot(tp, y_plot, lw=0.7)
             ax.set_ylabel(channel_names[ci])
-            ax.set_yticks(freq_tick_inds)
-            ax.set_yticklabels([f"{hz:g}" for hz in desired_ticks_hz])
+            ax.grid(True, alpha=0.15)
 
-        # --- Panel 3: correlation trace (diagnostic only) ---
+            # Shade bad epochs for that channel (epoch-level flags)
+            bad_epochs = np.where(bad_mask[ci])[0]
+            for e in bad_epochs:
+                start = e * epoch_len
+                end = (e + 1) * epoch_len
+                if plot_seconds_per_screen is not None and start > plot_seconds_per_screen:
+                    break
+                ax.axvspan(start, end, color="magenta", alpha=0.25, lw=0)
+
+        # --- Panel 3: correlation trace (diagnostic only), aligned to time ---
         axc = axes[2]
-        axc.plot(np.arange(n_epochs), eog_corr, lw=1.0)
+        epoch_centers_s = (np.arange(n_epochs) + 0.5) * epoch_len
+        axc.plot(epoch_centers_s, eog_corr, lw=1.0)
         axc.set_ylabel("EOG corr")
         axc.set_ylim(-1.05, 1.05)
+        axc.grid(True, alpha=0.15)
 
-        axc.set_xticks(tick_positions)
-        axc.set_xticklabels(tick_labels)
-        axc.set_xlabel("Time (HH:MM)")
+        # Shared X formatting
+        axes[-1].set_xticks(tick_positions_s)
+        axes[-1].set_xticklabels(tick_labels)
+        axes[-1].set_xlabel("Time (HH:MM)")
+
+        if plot_seconds_per_screen is not None:
+            axes[-1].set_xlim(0, float(plot_seconds_per_screen))
 
         plt.tight_layout()
         plt.show()
@@ -246,14 +311,13 @@ def calculate_eog_quality(signal, sampling_rate, channel_names=None,
         "pop_mask": pop_mask,
         "hf_mask": hf_mask,
         "combined_flags": bad_mask,        # (2, epoch)
-        "visual_output": visual_output,    # (2, freq, epoch)
+        "visual_output": visual_output,    # (2, n_samples_trunc)
         "metadata": {
             "fs": fs,
             "epoch_len": epoch_len,
             "channels": channel_names,
-            "visual_freqs_hz": freqs[plot_mask],
             "visual_epoch_times_s": (np.arange(n_epochs) * epoch_len).astype(float),
+            "visual_time_s": visual_time_s,
+            "visual_output_shape": list(visual_output.shape),
         }
     }
-
-
