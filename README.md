@@ -157,8 +157,8 @@ where:
 
 | SNR Range | Signal Quality | Description |
 |:-----------:|:---------------:|:-------------|
-| **> 6 dB** | 🟢 Good | Clean ECG waveform, stable R-peaks |
-| **≤ 6 dB** | 🔴 Poor | Noisy or motion-corrupted ECG, unstable morphology |
+| **> 5 dB** | 🟢 Good | Clean ECG waveform, stable R-peaks |
+| **≤ 5 dB** | 🔴 Poor | Noisy or motion-corrupted ECG, unstable morphology |
 
 A higher SNR indicates that cardiac activity dominates noise sources such as motion artifacts, electrode detachment, or baseline wander.
 
