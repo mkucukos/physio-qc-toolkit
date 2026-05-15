@@ -10,6 +10,7 @@ A lightweight **Python toolkit** for **physiological signal quality control (QC)
 - Install dependencies via:
   ```bash
   pip install -r requirements.txt
+  ```
 
 ##  Overview
 
@@ -28,7 +29,7 @@ This toolkit provides an **end-to-end pipeline** to:
 physio-qc-toolkit/
 ├── assets/                  # Static figures used in README/docs
 ├── data/                    # Small sample data to re-run examples
-├── docs/                    # Documentation (usage, design notes)
+├── doc/                     # Documentation (usage, design notes)
 ├── quality/                 # QC pipelines, metrics, and visualization
 ├── utils/                   # I/O & helpers (EDF readers, filters, utils)
 ├── edf_signal_quality.ipynb # Main notebook to run + visualize QC
@@ -68,8 +69,8 @@ physio-qc-toolkit/
 ##  Example Usage - ECG QC 
 
 ```python
-from read.read_edf import read_edf_to_dataframes
-from quality.run_qc import run_ecg_qc
+from utils.read_edf import read_edf_to_dataframes
+from quality.ecg_quality import calculate_ecg_quality
 ```
 
 ### Step 1: Read EDF file
@@ -89,6 +90,7 @@ qc_output = calculate_ecg_quality(
 
 ```
 ### Step 3: Print summary
+```
 Overall Bad Epochs :  26.78%
   • Clipping           :   7.20%
   • Flatline           :   6.83%
@@ -192,8 +194,8 @@ A higher inversion ratio indicates stronger waveform reversal, typically due to 
 
 
 ```python
-from read.read_edf import read_edf_to_dataframes
-from quality.run_qc import calculate_quality
+from utils.read_edf import read_edf_to_dataframes
+from quality.eeg_quality import calculate_eeg_quality
 ```
 
 ### Step 1: Read EDF file
@@ -255,7 +257,6 @@ Empirically derived from labeled sleep EEG: contaminated epochs consistently sho
 | EEG Artifact Detection |
 |:-----------------------:|
 | ![EEG Artifact QC](assets/eeg_artifact.png) |
-repeats.
 
 ## ⚡ EEG Flatline Detection QC
 
@@ -336,5 +337,6 @@ LEG QC is evaluated in 30-second epochs (configurable) and is time-aligned with 
 }
 ```
 
-License
-This project is licensed under the MIT License — see the LICENSE
+## License
+
+This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
